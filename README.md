@@ -23,3 +23,23 @@ Each gate is a root of it's own subtree, and his children are the gates that con
 
 ### Circuit what's thy value?
 * The circuit with the lowest number of gates that solves the truth table should have the heighst value
+
+## Simulated annealing schedule function
+Currently using the function provided in the aima library.
+
+    def exp_schedule(k=20, lam=0.005, limit=100):
+    """One possible schedule function for simulated annealing"""
+        return lambda t: (k * math.exp(-lam * t) if t < limit else 0)
+* High k value - large cicuits are explored and takes longer to converge (also requires higher limit).
+* limit - the number of iterations performed.
+* lam ??
+* Coverging to the optimal solution also depend on the circuit value.
+
+## TODO
+* Define a value to a circuit.
+* Find the optimal simulated annealing schedule function.
+* Find a correct way to implement slicing in the Gate class for genetic algorithms.
+
+
+## Run
+    python3 Main.py
