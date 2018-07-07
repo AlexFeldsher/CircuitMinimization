@@ -25,7 +25,7 @@ def _example():
 
     problem = Logic.Problem(initial_state)
     #print("solution with bfs", Search.breadth_first_graph_search(problem).state.state)
-    print("solution with simulated annealing", Search.simulated_annealing(problem, Search.exp_schedule(20,0.005,10000)).state)
+    print("solution with simulated annealing", Search.simulated_annealing(problem, Search.exp_schedule(5,0.005,3000)).state)
     #print("solution with hill climbing", Search.hill_climbing(problem).state)
     #print("solution with best first search", Search.best_first_graph_search(problem, Logic.cost2).state.state)
 

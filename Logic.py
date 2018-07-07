@@ -282,7 +282,7 @@ class State:
         state = self.__copy__()
         state.state = action
         state.get_outputs(action)
-        log(self.apply_action, action, state)
+        #log(self.apply_action, action, state)
         return state
 
     def evaluate(self, _input: Sequence[bool], gate: Union[Gate, int]):
@@ -322,7 +322,7 @@ class Problem(Search.Problem):
 
     def result(self, state: State, action: Gate) -> State:
         res = state.apply_action(action)
-        log(self.result, state, action, res)
+        #log(self.result, state, action, res)
         return res
 
     def goal_test(self, state: State) -> bool:
@@ -339,6 +339,3 @@ class Problem(Search.Problem):
                 counter += 1
         return (counter - len(state.truth_table))*(state.state.height + 1)*10 - state.state.num_of_gates()
 
-
-def cost(node: Search.Node) -> int:
-    return repr(node.state.state).count("(")
