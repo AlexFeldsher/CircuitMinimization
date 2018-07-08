@@ -37,6 +37,10 @@ Currently using the function provided in the aima library.
 
 ## TODO
 * Define a value to a circuit.
+* Identify equivalent circuits. Will significantly reduce the search space.
+
+        AND(0,OR(1,0)) == AND(OR(0,1),0)
+        
 * Find the optimal simulated annealing schedule function.
 * Find a correct way to implement slicing in the Gate class for genetic algorithms.
 
