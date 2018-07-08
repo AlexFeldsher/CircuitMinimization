@@ -4,13 +4,14 @@ import multiprocessing as mp
 import time
 import types
 from copy import deepcopy
-from typing import TypeVar, Sequence, Mapping, Union, List
+from typing import TypeVar, Sequence, Mapping, Union, List, Set
 
 import Search
 
 DEBUG = True
 
-Params = TypeVar('Params', List[Union['Gate', int]], int)
+CircuitInput = int  # For readability
+GateInputs = TypeVar('Params', List[Union['Gate', 'CircuitInput']], 'CircuitInput')
 
 
 def log(_method, *args):
@@ -30,20 +31,20 @@ class Gate:
     """ A class representing a gate in a circuit
         Basically a node in a graph """
 
-    def __init__(self, name: str, logic: types.FunctionType, n_params: int, representation: str = None):
+    def __init__(self, name: str, logic: types.FunctionType, n_inputs: int, representation: str = None):
         """ :param name: the name of the gate, i.e. "NAND", "OR", ..
             :param logic: a function that given boolean input will output the result of the gate logic
-            :param n_params: the number of inputs the gate has
+            :param n_inputs: the number of inputs the gate has
             :param representation: string representation of the graph """
         self.name = name
         self.logic = logic
-        self.n_params = n_params
-        self.params = None
+        self.n_inputs = n_inputs
+        self.gate_inputs = None
         self.height = None  # the distance of the gate from the input
         self.representation = representation
 
     def __repr__(self) -> str:
-        if self.params is not None:
+        if self.gate_inputs is not None:
             self._update_repr()
         return self.representation
 
@@ -59,18 +60,18 @@ class Gate:
         return self.height < other.height
 
     def __copy__(self) -> 'Gate':
-        gate = Gate(self.name, self.logic, self.n_params)
-        gate.set_params(self.params)
+        gate = Gate(self.name, self.logic, self.n_inputs)
+        gate.set_params(self.gate_inputs)
         return gate
 
     def __deepcopy__(self, memodict={}) -> 'Gate':
         new_params = list()
-        if type(self.params) is int:
-            new_params = self.params
+        if type(self.gate_inputs) is CircuitInput:
+            new_params = self.gate_inputs
         else:
-            for gate in self.params:
+            for gate in self.gate_inputs:
                 new_params.append(deepcopy(gate))
-        gate = Gate(self.name, self.logic, self.n_params)
+        gate = Gate(self.name, self.logic, self.n_inputs)
         gate.set_params(new_params)
         return gate
 
@@ -93,54 +94,54 @@ class Gate:
     def __iter__(self) -> 'Gate':
         """ Iterate over the circuit where this gate is the root"""
         yield self
-        if type(self.params) is not int:
-            for gate in self.params:
+        if type(self.gate_inputs) is not CircuitInput:
+            for gate in self.gate_inputs:
                 yield from gate
 
-    def set_params(self, gates: Params) -> None:
+    def set_params(self, gates: GateInputs) -> None:
         """ Set the gate inputs
             :param gates: the gates to set as input """
         if gates is None:
             return
-        if type(gates) is int:
-            self.params = gates
+        if type(gates) is CircuitInput:
+            self.gate_inputs = gates
         else:
-            self.params = list(gates)
+            self.gate_inputs = list(gates)
         self.update_height()
 
-    def get_params(self) -> Params:
-        return self.params
+    def get_params(self) -> GateInputs:
+        return self.gate_inputs
 
     def params_iter(self):
         """ Iterator for the gate inputs """
-        if type(self.params) is int:
-            return self.params
-        for param in self.params:
+        if type(self.gate_inputs) is CircuitInput:
+            return self.gate_inputs
+        for param in self.gate_inputs:
             yield param
 
     def evaluate(self, bools: Sequence[bool]) -> bool:
         """ Evaluate the gate with the given input
             :param bools: a collection of Booleans
             :return: True or False """
-        if len(bools) < self.n_params or len(bools) > self.n_params:
+        if len(bools) < self.n_inputs or len(bools) > self.n_inputs:
             raise ValueError('Trying to evaluate with wrong number of parameters')
         return self.logic(*bools)
 
     def can_replace(self, gate: 'Gate') -> bool:
         """ :return: true if the given gate can replace this gate """
-        return gate.n_params == self.n_params
+        return gate.n_inputs == self.n_inputs
 
     def update_height(self) -> int:
         """ updates the height recursively down the tree """
-        if type(self.params) is int:
+        if type(self.gate_inputs) is CircuitInput:
             self.height = 0
         else:
-            self.height = max([p.update_height() for p in self.params]) + 1
+            self.height = max([p.update_height() for p in self.gate_inputs]) + 1
         return self.height
 
     def num_of_gates(self) -> int:
         """ The number of unique gates in the circuit """
-        if type(self.params) is int:
+        if type(self.gate_inputs) is CircuitInput:
             return 0
         set_of_gates = set()
         for gate in self:
@@ -148,17 +149,17 @@ class Gate:
         return len(set_of_gates)
 
     def _update_repr(self) -> None:
-        if type(self.params) is int:
-            self.representation = str(self.params)
+        if type(self.gate_inputs) is CircuitInput:
+            self.representation = str(self.gate_inputs)
             return
         self.representation = self.name + '('
-        for gate in self.params:
+        for gate in self.gate_inputs:
             self.representation += repr(gate) + ','
         self.representation = self.representation[:-1] + ')'
 
 
 class State:
-    identity_gate = Gate(name='I', logic=_id, n_params=1)
+    identity_gate = Gate(name='I', logic=_id, n_inputs=1)
 
     def __init__(self, gates: Sequence[Gate], truth_table: Mapping[Sequence[bool], bool], n_inputs: int,
                  initial_state: Union[Gate, None] = None):
@@ -205,12 +206,12 @@ class State:
     def get_actions(self) -> Sequence[Gate]:
         return self.gates
 
-    def get_successors(self, action: Gate) -> Sequence[Gate]:
+    def get_successors(self, action: Gate) -> Set[Gate]:
         """ Returns a list of successors """
         successors = set()
         successors.add(self.state)  # add the previous circuit for backtracking
 
-        queue = mp.Queue()
+        queue = mp.Queue()   # shared thread safe data structure
         p1 = mp.Process(target=attach_gate_at_end, args=(self, action, queue))
         p2 = mp.Process(target=insert_gate_into_circuit, args=(self, action, queue))
         p3 = mp.Process(target=replace_gate_with_action, args=(self, action, queue))
@@ -248,15 +249,15 @@ class State:
         # log(self.apply_action, action, state)
         return state
 
-    def evaluate(self, _input: Sequence[bool], gate: Union[Gate, int]):
+    def evaluate(self, _input: Sequence[bool], gate: Union[Gate, CircuitInput]):
         if type(gate) != Gate:
             return _input[gate]
-        params = [False for _ in range(gate.n_params)]
-        if type(gate.params) is int:
-            params[0] = self.evaluate(_input, gate.params)
+        params = [False for _ in range(gate.n_inputs)]
+        if type(gate.gate_inputs) is CircuitInput:
+            params[0] = self.evaluate(_input, gate.gate_inputs)
         else:
-            for i in range(gate.n_params):
-                params[i] = self.evaluate(_input, gate.params[i])
+            for i in range(gate.n_inputs):
+                params[i] = self.evaluate(_input, gate.gate_inputs[i])
         return gate.evaluate(params)
 
     def is_goal(self) -> bool:
@@ -270,7 +271,7 @@ class State:
 
 def attach_gate_at_end(state: State, action: Gate, queue: mp.Queue) -> None:
     # all the possible output combinations where "action" is the top gate
-    for combination in itertools.combinations(state.outputs, action.n_params - 1):
+    for combination in itertools.combinations(state.outputs, action.n_inputs - 1):
         # check whether both we have repeating inputs
         if state.state not in combination and len(set(combination)) == len(combination):
             gate = action.__copy__()
@@ -289,24 +290,24 @@ def insert_gate_into_circuit(state: State, action: Gate, queue: mp.Queue) -> Non
             possible_outputs = filter(lambda x: x.height < gate_copy.height - 1, state.outputs)
             new_gate = action.__copy__()  # create the new gate
             # add all the possible combinations to the new gate inputs
-            for combination in itertools.combinations(possible_outputs, new_gate.n_params):
+            for combination in itertools.combinations(possible_outputs, new_gate.n_inputs):
                 new_gate.set_params(combination)
 
                 # add the new gate as an input in the gate copy (all possible position)
-                for i in range(len(gate_copy.params)):
-                    tmp = gate_copy.params[i]
-                    gate_copy.params[i] = new_gate
+                for i in range(len(gate_copy.gate_inputs)):
+                    tmp = gate_copy.gate_inputs[i]
+                    gate_copy.gate_inputs[i] = new_gate
                     root.update_height()
                     queue.put(deepcopy(root))
 
-                    gate_copy.params[i] = tmp
+                    gate_copy.gate_inputs[i] = tmp
 
 
 def replace_gate_with_action(state: State, action: Gate, queue: mp.Queue) -> None:
     # Replacing gates with action
     for gate in state.state:
         # can't replace the inputs (identity gates) and can only replace gates with the same number of inputs
-        if gate.name != state.identity_gate.name and gate.n_params == action.n_params:
+        if gate.name != state.identity_gate.name and gate.n_params == action.n_inputs:
             root = deepcopy(state.state)
             gate_copy = root[gate]
             # Convert the gate to the action gate type
@@ -326,13 +327,13 @@ def remove_gate_from_circuit(state: State, action: Gate, queue: mp.Queue) -> Non
             root = deepcopy(state.state)  # create a copy of the circuit
             for g in root:
                 # if the previous gate is the parent of the gate we are looking for
-                if g == gate and type(prev.params) is not int and g in prev.params:
-                    prev_params = [p for p in prev.params if
-                                   p != g]  # save the params that aren't the gate we are removing
+                if g == gate and type(prev.gate_inputs) is not CircuitInput and g in prev.gate_inputs:
+                    prev_inputs = [p for p in prev.gate_inputs if
+                                   p != g]  # save the inputs that aren't the gate we are removing
                     possible_outputs = filter(lambda x: x.height < g.height - 1, state.outputs)
                     # create circuits with the gate removed
                     for output in possible_outputs:
-                        prev.params = prev_params + list(output)
+                        prev.gate_inputs = prev_inputs + list(output)
                         root.update_height()
                         queue.put(deepcopy(root))
                 root = deepcopy(state.state)  # create a copy of the circuit
@@ -345,7 +346,7 @@ class Problem(Search.Problem):
         log(self.__init__, initial, goal)
         super().__init__(initial, goal)
 
-    def actions(self, state: State) -> Sequence[Gate]:
+    def actions(self, state: State) -> Set[Gate]:
         successors = set()
         actions = state.get_actions()
         for action in actions:
