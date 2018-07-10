@@ -14,7 +14,8 @@ Each gate is a root of it's own subtree, and his children are the gates that con
         Gate(name='AND', logic=lambda x,y: x and y, n_params=2)
         Gate(name='NOT', logic=lambda x: not x, n_params=1)
     
-* Works with simulated annealing
+* Works with simulated annealing.
+* Can work with other uninformed/informed searches.
 
 ### Circuit who's thy neighbor?
 * All the circuits with an additional gate.
@@ -22,7 +23,7 @@ Each gate is a root of it's own subtree, and his children are the gates that con
 * All the circuits with a single gate removed.
 
 ### Circuit what's thy value?
-* The circuit with the lowest number of gates that solves the truth table should have the heighst value
+* The circuit with the lowest number of gates that solves the truth table should have the heighst value, since aima's simulated annealing implementation looks for the global maximum.
 
 ## Simulated annealing schedule function
 Currently using the function provided in the aima library.
@@ -32,12 +33,12 @@ Currently using the function provided in the aima library.
         return lambda t: (k * math.exp(-lam * t) if t < limit else 0)
 * High k value - large cicuits are explored and takes longer to converge (also requires higher limit).
 * limit - the number of iterations performed.
-* lam ??
-* Coverging to the optimal solution also depend on the circuit value.
+* lam - the rate decline.
+* Coverging to the optimal solution also depend on the circuit value definition.
 
 ## TODO
 * Define a value to a circuit.
-* Identify equivalent circuits. Will significantly reduce the search space.
+* ~~Identify equivalent circuits. Will significantly reduce the search space.~~
 
         AND(0,OR(1,0)) == AND(OR(0,1),0)
         
