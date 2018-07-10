@@ -176,7 +176,7 @@ def simulated_annealing(problem, schedule=exp_schedule()):
         log(simulated_annealing, "delta_e", delta_e)
         log(simulated_annealing, "T", T)
         log(simulated_annealing, "t", t)
-        prob = 1 if delta_e > 0 and delta_e > t else math.exp(delta_e / T)     # fix math range error
+        prob = 1 if delta_e > 0 and delta_e > T else math.exp(delta_e / T)     # fix math range error
         log(simulated_annealing, "probability", prob)
         prev = current
         if delta_e > 0 or probability(prob):
