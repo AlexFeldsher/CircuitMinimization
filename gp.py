@@ -13,14 +13,16 @@ from sympy.logic import SOPform
 
 class GP:
     BIN_OPS_MAP = {sympy.And: '&', sympy.Or: '|', sympy.Xor: '^'}  # isn't there a sympy mapping somewhere? anyway, extend as needed
+    LOW_FITNESS = -2**31
 
-    def __init__(self, num_vars=3, bin_ops=(sympy.And, sympy.Or), target_tt=None):
+    def __init__(self, num_vars=3, bin_ops=(sympy.And, sympy.Or), target_tt=None, pop_size=5000):
         """
         Create a genetic programming class that will help solve the circuit minimization problem
 
         :param num_vars: how many vars are we dealing with (i.e. truth table height is 2^num_vars)
         :param bin_ops: not necessarily binary - And(x,y,z) is legal as well. sympy.Not is always used.
         :param target_tt: some truth table, given as a np.array with shape (2**n, ) and dtype=np.bool. if None a random table is generated.
+        :param pop_size: population max size
         """
         self.num_vars = num_vars
 
@@ -42,17 +44,13 @@ class GP:
         self.tstr_ops = tuple(self.bin_ops)
         self.or_op_regex = '|'.join(self.str_ops)
 
-        # fitness and srepr structure array dtype
-        dtype = np.dtype([('fitness', '<f4'), ('srepr', '<U')])  # FIXME: consider setting length to <U, maybe <U3000?
-        # population of sreprs and their fitness. this changes throughout the run
-        self.population = np.array([], dtype=dtype)
-        # population = np.recarray([], dtype=dtype)
-
         # some truth table, given as a np.array with shape (2**n, )
-        self.target_tt = target_tt if target_tt is None else np.random.randint(2, size=2**3, dtype=np.bool)
+        self.target_tt = target_tt if target_tt is not None else np.random.randint(2, size=2**3, dtype=np.bool)
 
         self.tt_vars = list(itertools.product([0, 1], repeat=self.num_vars))  # [(0, 0, 0), (0, 0, 1), (0, 1, 0), ...]
         self.tt_vars_lists = list(zip(*self.tt_vars))  # [(0, 0, 0, 0, 1, 1, 1, 1), (0, 0, 1, 1, 0, 0, 1, 1), (0, 1, 0, 1, 0, 1, 0, 1)]
+
+        self.pop_size = pop_size
 
     def simple_random_srepr(self, nsymbols=5):  # FIXME: some other val
         """there's probably some better way."""  # TODO: investigate
@@ -164,19 +162,21 @@ class GP:
     def fitness(self, srepr):
         """
         Calculate the fitness of a srepr as a linear combination of:
-        - number of agreeing lines with the original truth table
+        - number (or percentage) of agreeing lines with the original truth table
         - number of gates (weight is negative)
 
         :param srepr: the result of a call to sympy.srepr,
             such as "Or(Symbol('x'), And(Symbol('y'), Or(Symbol('x'), Not(Symbol('z')))))"
         :return: fitness
         """
-        WEIGHT_TT = 0.8  # TODO: pick
-        WEIGHT_NB = -0.3  # TODO: pick
+        WEIGHT_TT = 20  # TODO: pick
+        WEIGHT_NB = -0.1  # TODO: pick
 
         # number of agreeing lines
         f = sympy.lambdify(self.syms, srepr)
         tt_f = f(*self.tt_vars_lists)
+        nz = np.count_nonzero(tt_f == self.target_tt)
+        per = nz / len(tt_f)
 
         '''
         %%timeit
@@ -193,7 +193,7 @@ class GP:
         # number of gates
         nb_gates = len(re.findall(self.or_op_regex, srepr))
 
-        score = WEIGHT_TT * np.count_nonzero(tt_f == tt) + WEIGHT_NB * nb_gates
+        score = WEIGHT_TT * per + WEIGHT_NB * nb_gates
         return score
 
     @staticmethod
@@ -201,6 +201,68 @@ class GP:
         dp = dotprint(sympy_parser.parse_expr(srepr))
         tfn = tempfile.mktemp(suffix='.png', prefix=pref)
         graphviz.Source(dp, filename=os.path.splitext(tfn)[0], format='png').view()
+
+    def _init_population(self, init_pop_size=1000):
+        # fitness and srepr structure array dtype
+        pop_dtype = np.dtype([('fitness', '<f4'), ('srepr', '<U3000')])  # FIXME: pick other length? separate and keep the strings elsewhere?
+
+        # population = np.recarray([], dtype=dtype)
+        # population of sreprs and their fitness. this changes throughout the run
+        self.population = np.array([self.LOW_FITNESS]*self.pop_size, dtype=pop_dtype).view(np.recarray)
+        # self.population = np.recarray((init_pop_size,), dtype=pop_dtype)
+        # self.population = np.rec.array([[self.LOW_FITNESS]*self.pop_size], dtype=pop_dtype)
+
+        # FIXME: multiprocess?
+        for i in range(init_pop_size):
+            some_srepr = self.simple_random_srepr(nsymbols=100)  # FIXME: other nsymbols?
+            some_fitness = self.fitness(some_srepr)
+            self.population[i] = (some_fitness, some_srepr)
+
+    def run(self, num_generations=10, init_pop_size=1000):
+        print('init population...', end=' ')
+        self._init_population(init_pop_size=init_pop_size)
+        print('done')
+
+        print('starting search')
+        for generation in range(num_generations):
+            print('generation %d/%d' % (generation, num_generations), 'best fitness:', self.population.fitness.max())
+
+            # get parents probability distribution
+            size_next_gen = 300  # KEEP EVEN NUMBER. FIXME: other number?
+            fitness = self.population.fitness.copy()
+            real_min = np.min(fitness[fitness > self.LOW_FITNESS])
+            fitness[fitness == self.LOW_FITNESS] = real_min  # so no chance they'll be taken
+            nz_fitness = fitness - real_min
+            # each parent couple generates 2 children
+            parents = np.random.choice(np.arange(self.population.shape[0]), size=(int(size_next_gen/2), 2), p=nz_fitness/nz_fitness.sum())
+
+            # generate offspring and replace the weak samples in the population
+            # FIXME: multiprocess?
+            worst_indices = np.argpartition(self.population.fitness, size_next_gen).reshape(-1, 2)
+            for wi_couple, parent_couple in zip(worst_indices, parents):
+                child0, child1 = self.recombine(self.population.srepr[parent_couple[0]], self.population.srepr[parent_couple[1]])
+                child0 = self.mutate(child0)
+                c0_fitness = self.fitness(child0)
+
+                child1 = self.mutate(child1)
+                c1_fitness = self.fitness(child1)
+
+                self.population[wi_couple[0]] = (c0_fitness, child0)
+                self.population[wi_couple[1]] = (c1_fitness, child1)
+
+        best_fitness_index = self.population.fitness.argmax()
+
+        print()
+        print('Finished!')
+        print('fitness:', self.population.fitness[best_fitness_index])
+        print('percentage:', self._precentage_of_tt(self.population.srepr[best_fitness_index]))
+        print('srepr:', self.population.srepr[best_fitness_index])
+
+    def _precentage_of_tt(self, srepr):
+        f = sympy.lambdify(self.syms, srepr)
+        tt_f = f(*self.tt_vars_lists)
+        return np.count_nonzero(tt_f == self.target_tt) / len(tt_f)
+
 
 
 def tt_to_sympy_minterms(tt):
