@@ -285,7 +285,7 @@ class GP:
             print('generation {0}/{1}   best fitness: {2}     best accuracy: {3}'.format(
                 generation,
                 num_generations,
-                self.population[self.population.accuracy.argmax()],
+                self.population[self.population.fitness.argmax()],
                 self.population[self.population.accuracy.argmax()]))
 
             # get parents probability distribution
@@ -299,7 +299,7 @@ class GP:
             parents_sreprs = [(self.sreprs[x[0]], self.sreprs[x[1]]) for x in parents]
 
             # generate offspring and replace the weak samples in the population
-            worst_indices = np.argpartition(self.population.fitness, size_next_gen).reshape(-1, 2)
+            worst_indices = np.argpartition(self.population.fitness, size_next_gen)[:size_next_gen].reshape(-1, 2)
             next_gen = g.util.pool.map(g.util.create_next_gen, parents_sreprs)
 
             for wi_couple, children in zip(worst_indices, next_gen):
@@ -320,7 +320,9 @@ class GP:
             self.population[best_fitness_index],
             self.population[best_accuracy_index]
         ))
+        print()
         print(self.sreprs[best_fitness_index])
+        print()
         print(self.sreprs[best_accuracy_index])
 
 
