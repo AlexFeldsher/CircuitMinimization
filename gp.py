@@ -1,5 +1,4 @@
 import os
-import sys
 import time
 import tempfile
 import graphviz
@@ -227,16 +226,19 @@ class Util:
 
     def create_next_gen(self, parents_sreprs_couple):
         """just here so we can parallelize run"""
-        # child0, child1 = self.recombine(self.population.srepr[parent_couple[0]], self.population.srepr[parent_couple[1]])
-        # s = time.time()
         child0, child1 = self.recombine(parents_sreprs_couple[0], parents_sreprs_couple[1])
         child0 = self.mutate(child0)
-        c0_fitness, c0_accuracy, c0_numgates = self.fitness(child0)
-
         child1 = self.mutate(child1)
-        c1_fitness, c1_accuracy, c1_numgates = self.fitness(child1)
-        # print(time.time()-s)
-        return child0, c0_fitness, c0_accuracy, c0_numgates, child1, c1_fitness, c1_accuracy, c1_numgates
+
+        return child0, child1
+
+        # child0, child1 = self.recombine(parents_sreprs_couple[0], parents_sreprs_couple[1])
+        # child0 = self.mutate(child0)
+        # c0_fitness, c0_accuracy, c0_numgates = self.fitness(child0)
+        #
+        # child1 = self.mutate(child1)
+        # c1_fitness, c1_accuracy, c1_numgates = self.fitness(child1)
+        # return child0, c0_fitness, c0_accuracy, c0_numgates, child1, c1_fitness, c1_accuracy, c1_numgates
 
     def precentage_of_tt(self, srepr):
         f = sympy.lambdify(self.syms, srepr)
@@ -258,6 +260,7 @@ class GP:
         """
         self.pop_size = pop_size
         self.util = Util(num_vars=num_vars, bin_ops=bin_ops, target_tt=target_tt, pop_size=pop_size)
+        self.cache = {}
 
     def _init_population(self, init_pop_size=1000):
         # fitness and srepr structure array dtype
@@ -271,6 +274,7 @@ class GP:
         for i, r in enumerate(ret):
             r_fitness, r_accuracy, r_numgates, r_srepr = r
             self.population[i] = r_fitness, r_accuracy, r_numgates
+            self.cache[r_srepr] = r_fitness, r_accuracy, r_numgates
             self.sreprs[i] = r_srepr
 
     def run(self, num_generations=10, init_pop_size=1000):
@@ -299,15 +303,21 @@ class GP:
             parents_sreprs = [(self.sreprs[x[0]], self.sreprs[x[1]]) for x in parents]
 
             # generate offspring and replace the weak samples in the population
-            worst_indices = np.argpartition(self.population.fitness, size_next_gen)[:size_next_gen].reshape(-1, 2)
+            worst_indices = np.argpartition(self.population.fitness, size_next_gen)[:size_next_gen]
             next_gen = g.util.pool.map(g.util.create_next_gen, parents_sreprs)
+            flat_next_gen = [s for sc in next_gen for s in sc]
+            next_gen_noncached_srepr = [srepr for srepr in flat_next_gen if srepr not in self.cache]
+            next_gen_noncached_fitness = g.util.pool.map(g.util.fitness, next_gen_noncached_srepr)
 
-            for wi_couple, children in zip(worst_indices, next_gen):
-                child0, c0_fitness, c0_accuracy, c0_numgates, child1, c1_fitness, c1_accuracy, c1_numgates = children
-                self.population[wi_couple[0]] = (c0_fitness, c0_accuracy, c0_numgates)
-                self.sreprs[wi_couple[0]] = child0
-                self.population[wi_couple[1]] = (c1_fitness, c1_accuracy, c1_numgates)
-                self.sreprs[wi_couple[1]] = child1
+            self.cache.update(zip(next_gen_noncached_srepr, next_gen_noncached_fitness))
+
+            next_gen_fitness = [(srepr,) + self.cache[srepr] for srepr in flat_next_gen]  # dictify if want unique
+
+            for wi, children in zip(worst_indices, next_gen_fitness):
+                # child0, c0_fitness, c0_accuracy, c0_numgates, child1, c1_fitness, c1_accuracy, c1_numgates = children
+                child, c_fitness, c_accuracy, c_numgates = children
+                self.population[wi] = (c_fitness, c_accuracy, c_numgates)
+                self.sreprs[wi] = child
 
         print()
         print('Finished!')
@@ -346,15 +356,16 @@ def tt_to_sympy_minterms(tt):
 if __name__ == '__main__':
     # just for some playing around:
     tt = np.array([0, 1, 1, 0, 0, 0, 1, 1], dtype=np.bool)
+    # tt = np.array([0, 1, 1, 0, 0, 0, 1, 1, 0, 1, 1, 0, 0, 0, 1, 1], dtype=np.bool)
     # GP initializes util=Util(...)
-    g = GP(num_vars=3, bin_ops=(sympy.And, sympy.Or), target_tt=tt)
+    g = GP(num_vars=int(np.log2(tt.shape[0])), bin_ops=(sympy.And, sympy.Or), target_tt=tt)
     fn = g.util.syms[0] | (g.util.syms[1] & (~g.util.syms[2] | g.util.syms[0]))
     srepr = sympy.srepr(fn)
     mt = tt_to_sympy_minterms(g.util.target_tt)
     sop_form = SOPform(g.util.syms, mt)
 
     try:
-        g.run(num_generations=400, init_pop_size=100)
+        g.run(num_generations=2000, init_pop_size=10)
         # g.run()
     except KeyboardInterrupt:
         pass
