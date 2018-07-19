@@ -44,7 +44,7 @@ class Util:
         self.str_ops = set(map(str, self.ops))
         self.tstr_bin_ops = tuple(self.str_bin_ops)
         self.tstr_ops = tuple(self.bin_ops)
-        self.or_op_regex = '|'.join(self.str_ops)
+        self.or_op_regex = re.compile('|'.join(self.str_ops))
 
         # some truth table, given as a np.array with shape (2**n, )
         self.target_tt = target_tt if target_tt is not None else np.random.randint(2, size=2**3, dtype=np.bool)
@@ -148,7 +148,7 @@ class Util:
         return ret
 
     def pick_random_rep(self, s, pick_op_prob=0.9):
-        iops = [m.start() for m in re.finditer(self.or_op_regex, s)]  # indices of ops
+        iops = [m.start() for m in self.or_op_regex.finditer(s)]  # indices of ops
         isyms = [m.start() for m in re.finditer('Symbol', s)]  # indices of symbols
         pick_from = iops if iops and random.random() < pick_op_prob else isyms
         rep = random.choice(pick_from)
@@ -185,12 +185,13 @@ class Util:
             such as "Or(Symbol('x'), And(Symbol('y'), Or(Symbol('x'), Not(Symbol('z')))))"
         :return: fitness
         """
-        WEIGHT_TT = 4  # TODO: pick
+        WEIGHT_TT = 10  # TODO: pick
         WEIGHT_NB = -0.1  # TODO: pick
 
         # number of agreeing lines
         f = sympy.lambdify(self.syms, srepr)
         tt_f = f(*self.tt_vars_lists)
+        # I think it's better to use number of lines instead of percentage since larger tt will also need larger circuits
         nz = np.count_nonzero(tt_f == self.target_tt)
         per = nz / len(tt_f)
 
@@ -207,10 +208,10 @@ class Util:
         '''
 
         # number of gates
-        nb_gates = len(re.findall(self.or_op_regex, srepr))
+        nb_gates = len(self.or_op_regex.findall(srepr))
 
-        score = WEIGHT_TT * per + WEIGHT_NB * nb_gates
-        return score
+        score = WEIGHT_TT * nz + WEIGHT_NB * nb_gates
+        return score, per
 
     @staticmethod
     def show(srepr, pref='dp_'):
@@ -221,8 +222,8 @@ class Util:
     def init_one(self, _):
         """just here so we can parallelize population init"""
         some_srepr = self.simple_random_srepr(nsymbols=100)  # FIXME: other nsymbols?
-        some_fitness = self.fitness(some_srepr)
-        return some_fitness, some_srepr
+        some_fitness, some_accuracy = self.fitness(some_srepr)
+        return some_fitness, some_accuracy, some_srepr
 
     # def _create_next_gen(self, parent_couple):
     def create_next_gen(self, parents_sreprs_couple):
@@ -231,12 +232,12 @@ class Util:
         # s = time.time()
         child0, child1 = self.recombine(parents_sreprs_couple[0], parents_sreprs_couple[1])
         child0 = self.mutate(child0)
-        c0_fitness = self.fitness(child0)
+        c0_fitness, c0_accuracy = self.fitness(child0)
 
         child1 = self.mutate(child1)
-        c1_fitness = self.fitness(child1)
+        c1_fitness, c1_accuracy = self.fitness(child1)
         # print(time.time()-s)
-        return child0, c0_fitness, child1, c1_fitness
+        return child0, c0_fitness, c0_accuracy, child1, c1_fitness, c1_accuracy
 
     def precentage_of_tt(self, srepr):
         f = sympy.lambdify(self.syms, srepr)
@@ -261,14 +262,17 @@ class GP:
 
     def _init_population(self, init_pop_size=1000):
         # fitness and srepr structure array dtype
-        pop_dtype = np.dtype([('fitness', '<f4'), ('srepr', '<U3000')])  # FIXME: pick other length? separate and keep the strings elsewhere?
+        pop_dtype = np.dtype([('fitness', '<f4'), ('accuracy', '<f4')])
 
         # population of sreprs and their fitness. this changes throughout the run
         self.population = np.array([self.LOW_FITNESS]*self.pop_size, dtype=pop_dtype).view(np.recarray)
+        self.sreprs = [None] * self.pop_size
 
         ret = g.util.pool.map(g.util.init_one, range(init_pop_size))
-        for i, p in enumerate(ret):
-            self.population[i] = p
+        for i, r in enumerate(ret):
+            r_fitness, r_accuracy, r_srepr = r
+            self.population[i] = r_fitness, r_accuracy
+            self.sreprs[i] = r_srepr
 
     def run(self, num_generations=10, init_pop_size=1000):
         print('init population...', end=' ', flush=True)
@@ -277,7 +281,11 @@ class GP:
 
         print('starting search')
         for generation in range(num_generations):
-            print('generation %d/%d' % (generation, num_generations), 'best fitness:', self.population.fitness.max())
+            print('generation {0}/{1} best fitness: {2}, best accuracy: {3}'.format(
+                generation,
+                num_generations,
+                self.population.fitness.max(),
+                self.population.accuracy.max()))
 
             # get parents probability distribution
             size_next_gen = 300  # KEEP EVEN NUMBER. FIXME: other number?
@@ -287,24 +295,26 @@ class GP:
             nz_fitness = fitness - real_min
             # each parent couple generates 2 children
             parents = np.random.choice(np.arange(self.population.shape[0]), size=(int(size_next_gen/2), 2), p=nz_fitness/nz_fitness.sum())
-            parents_sreprs = [(self.population.srepr[x[0]], self.population.srepr[x[1]]) for x in parents]
+            parents_sreprs = [(self.sreprs[x[0]], self.sreprs[x[1]]) for x in parents]
 
             # generate offspring and replace the weak samples in the population
             worst_indices = np.argpartition(self.population.fitness, size_next_gen).reshape(-1, 2)
             next_gen = g.util.pool.map(g.util.create_next_gen, parents_sreprs)
 
             for wi_couple, children in zip(worst_indices, next_gen):
-                child0, c0_fitness, child1, c1_fitness = children
-                self.population[wi_couple[0]] = (c0_fitness, child0)
-                self.population[wi_couple[1]] = (c1_fitness, child1)
+                child0, c0_fitness, c0_accuracy, child1, c1_fitness, c1_accuracy = children
+                self.population[wi_couple[0]] = (c0_fitness, c0_accuracy)
+                self.sreprs[wi_couple[0]] = child0
+                self.population[wi_couple[1]] = (c1_fitness, c1_accuracy)
+                self.sreprs[wi_couple[1]] = child1
 
         best_fitness_index = self.population.fitness.argmax()
 
         print()
         print('Finished!')
         print('fitness:', self.population.fitness[best_fitness_index])
-        print('percentage:', g.util.precentage_of_tt(self.population.srepr[best_fitness_index]))
-        print('srepr:', self.population.srepr[best_fitness_index])
+        print('percentage:', g.util.precentage_of_tt(self.sreprs[best_fitness_index]))
+        print('srepr:', self.sreprs[best_fitness_index])
 
 
 def tt_to_sympy_minterms(tt):
@@ -334,8 +344,8 @@ if __name__ == '__main__':
     mt = tt_to_sympy_minterms(g.util.target_tt)
     sop_form = SOPform(g.util.syms, mt)
     try:
-        # g.run(init_pop_size=10)
-        g.run()
+        g.run(num_generations=500, init_pop_size=100)
+        # g.run()
     except KeyboardInterrupt:
         pass  # just terminate the pool at the next line
     g.util.pool.terminate()
