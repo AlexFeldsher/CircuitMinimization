@@ -1,4 +1,6 @@
 import os
+import sys
+import time
 import tempfile
 import graphviz
 import random
@@ -9,6 +11,7 @@ import sympy
 from sympy.parsing import sympy_parser
 from sympy.printing.dot import dotprint
 from sympy.logic import SOPform
+import multiprocessing
 
 
 class GP:
@@ -51,6 +54,20 @@ class GP:
         self.tt_vars_lists = list(zip(*self.tt_vars))  # [(0, 0, 0, 0, 1, 1, 1, 1), (0, 0, 1, 1, 0, 0, 1, 1), (0, 1, 0, 1, 0, 1, 0, 1)]
 
         self.pop_size = pop_size
+
+        # create process pool
+        self.pool = multiprocessing.Pool(multiprocessing.cpu_count())
+
+    def __getstate__(self):
+        """allow pickling (used by multiprocessing)"""
+        s = time.time()
+        self_dict = self.__dict__.copy()
+        del self_dict['pool']
+        # print('_GETSTATE', time.time()-s)
+        return self_dict
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
 
     def simple_random_srepr(self, nsymbols=5):  # FIXME: some other val
         """there's probably some better way."""  # TODO: investigate
@@ -169,7 +186,7 @@ class GP:
             such as "Or(Symbol('x'), And(Symbol('y'), Or(Symbol('x'), Not(Symbol('z')))))"
         :return: fitness
         """
-        WEIGHT_TT = 20  # TODO: pick
+        WEIGHT_TT = 200  # TODO: pick
         WEIGHT_NB = -0.1  # TODO: pick
 
         # number of agreeing lines
@@ -202,21 +219,36 @@ class GP:
         tfn = tempfile.mktemp(suffix='.png', prefix=pref)
         graphviz.Source(dp, filename=os.path.splitext(tfn)[0], format='png').view()
 
+    def _init_one(self, _):
+        """just here so we can parallelize population init"""
+        some_srepr = self.simple_random_srepr(nsymbols=100)  # FIXME: other nsymbols?
+        some_fitness = self.fitness(some_srepr)
+        return some_fitness, some_srepr
+
     def _init_population(self, init_pop_size=1000):
         # fitness and srepr structure array dtype
         pop_dtype = np.dtype([('fitness', '<f4'), ('srepr', '<U3000')])  # FIXME: pick other length? separate and keep the strings elsewhere?
 
-        # population = np.recarray([], dtype=dtype)
         # population of sreprs and their fitness. this changes throughout the run
         self.population = np.array([self.LOW_FITNESS]*self.pop_size, dtype=pop_dtype).view(np.recarray)
-        # self.population = np.recarray((init_pop_size,), dtype=pop_dtype)
-        # self.population = np.rec.array([[self.LOW_FITNESS]*self.pop_size], dtype=pop_dtype)
 
-        # FIXME: multiprocess?
-        for i in range(init_pop_size):
-            some_srepr = self.simple_random_srepr(nsymbols=100)  # FIXME: other nsymbols?
-            some_fitness = self.fitness(some_srepr)
-            self.population[i] = (some_fitness, some_srepr)
+        ret = self.pool.map(self._init_one, range(init_pop_size))
+        for i, p in enumerate(ret):
+            self.population[i] = p
+
+    # def _create_next_gen(self, parent_couple):
+    def _create_next_gen(self, parents_sreprs_couple):
+        """just here so we can parallelize run"""
+        # child0, child1 = self.recombine(self.population.srepr[parent_couple[0]], self.population.srepr[parent_couple[1]])
+        # s = time.time()
+        child0, child1 = self.recombine(parents_sreprs_couple[0], parents_sreprs_couple[1])
+        child0 = self.mutate(child0)
+        c0_fitness = self.fitness(child0)
+
+        child1 = self.mutate(child1)
+        c1_fitness = self.fitness(child1)
+        # print(time.time()-s)
+        return child0, c0_fitness, child1, c1_fitness
 
     def run(self, num_generations=10, init_pop_size=1000):
         print('init population...', end=' ')
@@ -235,21 +267,31 @@ class GP:
             nz_fitness = fitness - real_min
             # each parent couple generates 2 children
             parents = np.random.choice(np.arange(self.population.shape[0]), size=(int(size_next_gen/2), 2), p=nz_fitness/nz_fitness.sum())
+            parents_sreprs = [(self.population.srepr[x[0]], self.population.srepr[x[1]]) for x in parents]
 
             # generate offspring and replace the weak samples in the population
             # FIXME: multiprocess?
             worst_indices = np.argpartition(self.population.fitness, size_next_gen).reshape(-1, 2)
-            for wi_couple, parent_couple in zip(worst_indices, parents):
-                child0, child1 = self.recombine(self.population.srepr[parent_couple[0]], self.population.srepr[parent_couple[1]])
-                child0 = self.mutate(child0)
-                c0_fitness = self.fitness(child0)
-
-                child1 = self.mutate(child1)
-                c1_fitness = self.fitness(child1)
-
+            s = time.time()
+            # next_gen = self.pool.map(self._create_next_gen, parents)
+            next_gen = self.pool.map(self._create_next_gen, parents_sreprs)
+            # next_gen = self.pool.map(outer, parents_sreprs)
+            for wi_couple, children in zip(worst_indices, next_gen):
+                child0, c0_fitness, child1, c1_fitness = children
                 self.population[wi_couple[0]] = (c0_fitness, child0)
                 self.population[wi_couple[1]] = (c1_fitness, child1)
 
+            # for wi_couple, parent_couple in zip(worst_indices, parents):
+            #     child0, child1 = self.recombine(self.population.srepr[parent_couple[0]], self.population.srepr[parent_couple[1]])
+            #     child0 = self.mutate(child0)
+            #     c0_fitness = self.fitness(child0)
+            #
+            #     child1 = self.mutate(child1)
+            #     c1_fitness = self.fitness(child1)
+            #
+            #     self.population[wi_couple[0]] = (c0_fitness, child0)
+            #     self.population[wi_couple[1]] = (c1_fitness, child1)
+            print(time.time()-s)
         best_fitness_index = self.population.fitness.argmax()
 
         print()
@@ -290,4 +332,9 @@ if __name__ == '__main__':
     srepr = sympy.srepr(fn)
     mt = tt_to_sympy_minterms(g.target_tt)
     sop_form = SOPform(g.syms, mt)
+    try:
+        g.run(init_pop_size=10)
+    except KeyboardInterrupt:
+        pass  # just terminate the pool at the next line
+    g.pool.terminate()
     # with sympy evaluate(False):  # cancel automatic evaluation
