@@ -246,7 +246,7 @@ class Util:
 class GP:
     LOW_FITNESS = -2**31
 
-    def __init__(self, pop_size=5000, size_next_gen=300, unique_pop=False, **kwargs):
+    def __init__(self, pop_size=5000, size_next_gen=300, lucky_per=0.10, unique_pop=False, **kwargs):
         """
         Create a genetic programming class that will help solve the circuit minimization problem
 
@@ -256,6 +256,11 @@ class GP:
         """
         self.pop_size = pop_size
         self.size_next_gen = size_next_gen
+
+        self.size_best_parents = (1 - lucky_per) * self.size_next_gen
+        if self.size_best_parents % 2 == 1: self.size_best_parents += 1
+        self.size_lucky_parents = self.size_next_gen - self.size_best_parents
+
         self.unique_pop = unique_pop
         self.util = Util(**kwargs)
         self.cache = {}
@@ -296,8 +301,12 @@ class GP:
             fitness[fitness == self.LOW_FITNESS] = real_min  # so no chance they'll be taken
             nz_fitness = fitness - real_min
             # each parent couple generates 2 children
-            parents = np.random.choice(np.arange(self.population.shape[0]), size=(int(self.size_next_gen/2), 2), p=nz_fitness/nz_fitness.sum())
-            parents_sreprs = [(self.sreprs[x[0]], self.sreprs[x[1]]) for x in parents]
+            best_parents = np.random.choice(np.arange(self.population.shape[0]), size=(int(self.size_best_parents/2), 2), p=nz_fitness/nz_fitness.sum())
+            lucky_parents = np.random.choice(np.arange(self.population.shape[0]), size=(int(self.size_lucky_parents/2), 2))
+            parents = np.concatenate((best_parents, lucky_parents))
+
+            parents_sreprs = [(self.sreprs[x[0]], self.sreprs[x[1]]) for x in parents
+                              if None not in [self.sreprs[x[0]], self.sreprs[x[1]]]]
 
             # generate offspring and replace the weak samples in the population
             worst_indices = np.argpartition(self.population.fitness, self.size_next_gen)[:self.size_next_gen]
@@ -355,6 +364,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--pop_size', type=int, default=100000, help='total population size - worst are removed if too many')
 parser.add_argument('--init_pop_size', type=int, default=100, help='initial population size')
 parser.add_argument('--size_next_gen', type=int, default=300, help='how many offspring in each generation. MUST BE EVEN')
+parser.add_argument('--lucky_per', type=float, default=0.05, help='what percentage of next gen size is taken *uniformly* at random')
 parser.add_argument('--num_generations', type=int, default=1000, help='total number of generation to run')
 parser.add_argument('--mutate_prob', type=float, default=0.05, help='probability of mutation of children')
 
@@ -384,6 +394,7 @@ if __name__ == '__main__':
            target_tt=tt,
            pop_size=opt.pop_size,
            size_next_gen=opt.size_next_gen,
+           lucky_per=opt.lucky_per,
            weight_num_gates=opt.weight_num_gates,
            weight_num_agree=opt.weight_num_agree,
     )
