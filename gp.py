@@ -17,7 +17,7 @@ import multiprocessing
 class Util:
     BIN_OPS_MAP = {sympy.And: '&', sympy.Or: '|', sympy.Xor: '^'}  # isn't there a sympy mapping somewhere? anyway, extend as needed
 
-    def __init__(self, num_vars=3, bin_ops=(sympy.And, sympy.Or), target_tt=None, mutate_prob=0.05):
+    def __init__(self, num_vars=3, bin_ops=(sympy.And, sympy.Or), target_tt=None, mutate_prob=0.05, weight_num_agree=20, weight_num_gates=-0.1):
         """
         Util class for sake of multiprocessing - avoiding passing the large self.population on each call
 
@@ -25,6 +25,8 @@ class Util:
         :param bin_ops: not necessarily binary - And(x,y,z) is legal as well. sympy.Not is always used.
         :param target_tt: some truth table, given as a np.array with shape (2**n, ) and dtype=np.bool. if None a random table is generated.
         :param mutate_prob: probability of child mutation
+        :param weight_num_agree: score weight of number of agreeing lines of srepr and target_tt
+        :param weight_num_gates: score weight of number of gates
         """
         self.num_vars = num_vars
 
@@ -53,6 +55,8 @@ class Util:
         self.tt_vars_lists = list(zip(*self.tt_vars))  # [(0, 0, 0, 0, 1, 1, 1, 1), (0, 0, 1, 1, 0, 0, 1, 1), (0, 1, 0, 1, 0, 1, 0, 1)]
 
         self.mutate_prob = mutate_prob
+        self.weight_num_agree = weight_num_agree
+        self.weight_num_gates = weight_num_gates
 
         # create process pool
         self.pool = multiprocessing.Pool(multiprocessing.cpu_count())
@@ -185,8 +189,6 @@ class Util:
             such as "Or(Symbol('x'), And(Symbol('y'), Or(Symbol('x'), Not(Symbol('z')))))"
         :return: fitness
         """
-        WEIGHT_TT = 10  # TODO: pick
-        WEIGHT_NB = -0.1  # TODO: pick
 
         # number of agreeing lines
         f = sympy.lambdify(self.syms, srepr)
@@ -210,7 +212,7 @@ class Util:
         # number of gates
         nb_gates = len(self.or_op_regex.findall(srepr))
 
-        score = WEIGHT_TT * nz + WEIGHT_NB * nb_gates
+        score = self.weight_num_agree * nz + self.weight_num_gates * nb_gates
         return score, per, nb_gates
 
     @staticmethod
@@ -354,8 +356,8 @@ parser.add_argument('--size_next_gen', type=int, default=300, help='how many off
 parser.add_argument('--num_generations', type=int, default=1000, help='total number of generation to run')
 parser.add_argument('--mutate_prob', type=float, default=0.05, help='probability of mutation of children')
 
-parser.add_argument('--weight_num_gates', type=float, default=-0.1, help='weight of number of gates in score')
-parser.add_argument('--weight_num_agree', type=float, default=10, help='weight of number of agreeing lines of srepr and target_tt')
+parser.add_argument('--weight_num_gates', type=float, default=-0.1, help='score weight of number of gates')
+parser.add_argument('--weight_num_agree', type=float, default=10, help='score weight of number of agreeing lines of srepr and target_tt')
 
 opt = parser.parse_args()
 
@@ -371,12 +373,15 @@ print('-------------- End ----------------')
 if __name__ == '__main__':
     # just for some playing around:
     # tt = np.array([0, 1, 1, 0, 0, 0, 1, 1], dtype=np.bool)
-    tt = np.array([0, 1, 1, 0, 0, 0, 1, 1] * 2, dtype=np.bool)
+    tt = np.array([0, 1, 1, 0, 0, 0, 1, 1] * 1, dtype=np.bool)
     g = GP(num_vars=int(np.log2(tt.shape[0])),
            bin_ops=(sympy.And, sympy.Or),
            target_tt=tt,
            pop_size=opt.pop_size,
-           size_next_gen=opt.size_next_gen)
+           size_next_gen=opt.size_next_gen,
+           weight_num_gates=opt.weight_num_gates,
+           weight_num_agree=opt.weight_num_agree,
+    )
     fn = g.util.syms[0] | (g.util.syms[1] & (~g.util.syms[2] | g.util.syms[0]))
     srepr = sympy.srepr(fn)
     mt = tt_to_sympy_minterms(g.util.target_tt)
