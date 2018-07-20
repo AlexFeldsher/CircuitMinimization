@@ -246,7 +246,7 @@ class Util:
 class GP:
     LOW_FITNESS = -2**31
 
-    def __init__(self, pop_size=5000, size_next_gen=300, **kwargs):
+    def __init__(self, pop_size=5000, size_next_gen=300, unique_pop=False, **kwargs):
         """
         Create a genetic programming class that will help solve the circuit minimization problem
 
@@ -256,6 +256,7 @@ class GP:
         """
         self.pop_size = pop_size
         self.size_next_gen = size_next_gen
+        self.unique_pop = unique_pop
         self.util = Util(**kwargs)
         self.cache = {}
 
@@ -307,7 +308,8 @@ class GP:
 
             self.cache.update(zip(next_gen_noncached_srepr, next_gen_noncached_fitness))
 
-            next_gen_fitness = [(srepr,) + self.cache[srepr] for srepr in flat_next_gen]  # dictify if want unique
+            next_gen_sreprs = flat_next_gen if not self.unique_pop else next_gen_noncached_srepr
+            next_gen_fitness = [(srepr,) + self.cache[srepr] for srepr in next_gen_sreprs]
 
             for wi, children in zip(worst_indices, next_gen_fitness):
                 # child0, c0_fitness, c0_accuracy, c0_numgates, child1, c1_fitness, c1_accuracy, c1_numgates = children
@@ -359,6 +361,8 @@ parser.add_argument('--mutate_prob', type=float, default=0.05, help='probability
 parser.add_argument('--weight_num_gates', type=float, default=-0.1, help='score weight of number of gates')
 parser.add_argument('--weight_num_agree', type=float, default=10, help='score weight of number of agreeing lines of srepr and target_tt')
 
+parser.add_argument('--unique_pop', type=bool, default=False, help='whether the population accepts existing members')
+
 opt = parser.parse_args()
 
 assert opt.size_next_gen % 2 == 0, 'size_next_gen must be even (each parent couple produces 2 offspring)'
@@ -375,6 +379,7 @@ if __name__ == '__main__':
     # tt = np.array([0, 1, 1, 0, 0, 0, 1, 1], dtype=np.bool)
     tt = np.array([0, 1, 1, 0, 0, 0, 1, 1] * 1, dtype=np.bool)
     g = GP(num_vars=int(np.log2(tt.shape[0])),
+           unique_pop=opt.unique_pop,
            bin_ops=(sympy.And, sympy.Or),
            target_tt=tt,
            pop_size=opt.pop_size,
