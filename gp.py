@@ -74,14 +74,24 @@ class Util:
 
     def simple_random_srepr(self, nsymbols=5):  # FIXME: some other val
         """there's probably some better way."""  # TODO: investigate
+        NOT_PROB = 0.5
+        PAREN_PROB = 0.2
         ret = ''
+        n_paren = 0
         for i in range(nsymbols):
-            if random.random() < 0.5:
+            if random.random() < NOT_PROB:
                 ret += '~'
+            if random.random() < PAREN_PROB:
+                ret += '('
+                n_paren += 1
             ret += random.choice(self.tstr_syms)
+            if n_paren > 0 and random.random() < PAREN_PROB:
+                ret += ')'
+                n_paren -= 1
             ret += random.choice(self.bin_ops_chars)
 
         ret += random.choice(self.tstr_syms)
+        ret += ')' * n_paren
         ret = sympy.srepr(sympy_parser.parse_expr(ret))
         return ret
 
@@ -221,9 +231,9 @@ class Util:
         tfn = tempfile.mktemp(suffix='.png', prefix=pref)
         graphviz.Source(dp, filename=os.path.splitext(tfn)[0], format='png').view()
 
-    def init_one(self, _):
+    def init_one(self, _=0):
         """just here so we can parallelize population init"""
-        some_srepr = self.simple_random_srepr(nsymbols=100)  # FIXME: other nsymbols?
+        some_srepr = self.simple_random_srepr(nsymbols=5)  # FIXME: other nsymbols?
         some_fitness, some_accuracy, some_ng = self.fitness(some_srepr)
         return some_fitness, some_accuracy, some_ng, some_srepr
 
