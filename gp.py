@@ -1,3 +1,4 @@
+import argparse
 import os
 import time
 import tempfile
@@ -16,14 +17,14 @@ import multiprocessing
 class Util:
     BIN_OPS_MAP = {sympy.And: '&', sympy.Or: '|', sympy.Xor: '^'}  # isn't there a sympy mapping somewhere? anyway, extend as needed
 
-    def __init__(self, num_vars=3, bin_ops=(sympy.And, sympy.Or), target_tt=None, pop_size=5000):
+    def __init__(self, num_vars=3, bin_ops=(sympy.And, sympy.Or), target_tt=None, mutate_prob=0.05):
         """
         Util class for sake of multiprocessing - avoiding passing the large self.population on each call
 
         :param num_vars: how many vars are we dealing with (i.e. truth table height is 2^num_vars)
         :param bin_ops: not necessarily binary - And(x,y,z) is legal as well. sympy.Not is always used.
         :param target_tt: some truth table, given as a np.array with shape (2**n, ) and dtype=np.bool. if None a random table is generated.
-        :param pop_size: population max size
+        :param mutate_prob: probability of child mutation
         """
         self.num_vars = num_vars
 
@@ -51,7 +52,7 @@ class Util:
         self.tt_vars = list(itertools.product([0, 1], repeat=self.num_vars))  # [(0, 0, 0), (0, 0, 1), (0, 1, 0), ...]
         self.tt_vars_lists = list(zip(*self.tt_vars))  # [(0, 0, 0, 0, 1, 1, 1, 1), (0, 0, 1, 1, 0, 0, 1, 1), (0, 1, 0, 1, 0, 1, 0, 1)]
 
-        self.pop_size = pop_size
+        self.mutate_prob = mutate_prob
 
         # create process pool
         self.pool = multiprocessing.Pool(multiprocessing.cpu_count())
@@ -227,18 +228,12 @@ class Util:
     def create_next_gen(self, parents_sreprs_couple):
         """just here so we can parallelize run"""
         child0, child1 = self.recombine(parents_sreprs_couple[0], parents_sreprs_couple[1])
-        child0 = self.mutate(child0)
-        child1 = self.mutate(child1)
+        if random.random() < self.mutate_prob:
+            child0 = self.mutate(child0)
+        if random.random() < self.mutate_prob:
+            child1 = self.mutate(child1)
 
         return child0, child1
-
-        # child0, child1 = self.recombine(parents_sreprs_couple[0], parents_sreprs_couple[1])
-        # child0 = self.mutate(child0)
-        # c0_fitness, c0_accuracy, c0_numgates = self.fitness(child0)
-        #
-        # child1 = self.mutate(child1)
-        # c1_fitness, c1_accuracy, c1_numgates = self.fitness(child1)
-        # return child0, c0_fitness, c0_accuracy, c0_numgates, child1, c1_fitness, c1_accuracy, c1_numgates
 
     def precentage_of_tt(self, srepr):
         f = sympy.lambdify(self.syms, srepr)
@@ -249,17 +244,17 @@ class Util:
 class GP:
     LOW_FITNESS = -2**31
 
-    def __init__(self, num_vars=3, bin_ops=(sympy.And, sympy.Or), target_tt=None, pop_size=5000):
+    def __init__(self, pop_size=5000, size_next_gen=300, **kwargs):
         """
         Create a genetic programming class that will help solve the circuit minimization problem
 
-        :param num_vars: how many vars are we dealing with (i.e. truth table height is 2^num_vars)
-        :param bin_ops: not necessarily binary - And(x,y,z) is legal as well. sympy.Not is always used.
-        :param target_tt: some truth table, given as a np.array with shape (2**n, ) and dtype=np.bool. if None a random table is generated.
         :param pop_size: population max size
+        :param size_next_gen: num of offspring in each generation
+        :param kwargs: passed on to Util
         """
         self.pop_size = pop_size
-        self.util = Util(num_vars=num_vars, bin_ops=bin_ops, target_tt=target_tt, pop_size=pop_size)
+        self.size_next_gen = size_next_gen
+        self.util = Util(**kwargs)
         self.cache = {}
 
     def _init_population(self, init_pop_size=1000):
@@ -292,18 +287,17 @@ class GP:
                 self.population[self.population.fitness.argmax()],
                 self.population[self.population.accuracy.argmax()]))
 
-            # get parents probability distribution
-            size_next_gen = 300  # KEEP EVEN NUMBER. FIXME: other number?
+            # get parents probability distribution - fitter sreprs are better picks as parents
             fitness = self.population.fitness.copy()
             real_min = np.min(fitness[fitness > self.LOW_FITNESS])
             fitness[fitness == self.LOW_FITNESS] = real_min  # so no chance they'll be taken
             nz_fitness = fitness - real_min
             # each parent couple generates 2 children
-            parents = np.random.choice(np.arange(self.population.shape[0]), size=(int(size_next_gen/2), 2), p=nz_fitness/nz_fitness.sum())
+            parents = np.random.choice(np.arange(self.population.shape[0]), size=(int(self.size_next_gen/2), 2), p=nz_fitness/nz_fitness.sum())
             parents_sreprs = [(self.sreprs[x[0]], self.sreprs[x[1]]) for x in parents]
 
             # generate offspring and replace the weak samples in the population
-            worst_indices = np.argpartition(self.population.fitness, size_next_gen)[:size_next_gen]
+            worst_indices = np.argpartition(self.population.fitness, self.size_next_gen)[:self.size_next_gen]
             next_gen = g.util.pool.map(g.util.create_next_gen, parents_sreprs)
             flat_next_gen = [s for sc in next_gen for s in sc]
             next_gen_noncached_srepr = [srepr for srepr in flat_next_gen if srepr not in self.cache]
@@ -321,7 +315,6 @@ class GP:
 
         print()
         print('Finished!')
-        self.print_best()
 
     def print_best(self):
         best_fitness_index = self.population.fitness.argmax()
@@ -353,23 +346,47 @@ def tt_to_sympy_minterms(tt):
     return minvars
 
 
+parser = argparse.ArgumentParser()
+
+parser.add_argument('--pop_size', type=int, default=100000, help='total population size - worst are removed if too many')
+parser.add_argument('--init_pop_size', type=int, default=100, help='initial population size')
+parser.add_argument('--size_next_gen', type=int, default=300, help='how many offspring in each generation. MUST BE EVEN')
+parser.add_argument('--num_generations', type=int, default=1000, help='total number of generation to run')
+parser.add_argument('--mutate_prob', type=float, default=0.05, help='probability of mutation of children')
+
+parser.add_argument('--weight_num_gates', type=float, default=-0.1, help='weight of number of gates in score')
+parser.add_argument('--weight_num_agree', type=float, default=10, help='weight of number of agreeing lines of srepr and target_tt')
+
+opt = parser.parse_args()
+
+assert opt.size_next_gen % 2 == 0, 'size_next_gen must be even (each parent couple produces 2 offspring)'
+
+args = vars(opt)
+print('------------ Options -------------')
+for k, v in sorted(args.items()):
+    print('%s: %s' % (str(k), str(v)))
+print('-------------- End ----------------')
+
+
 if __name__ == '__main__':
     # just for some playing around:
-    tt = np.array([0, 1, 1, 0, 0, 0, 1, 1], dtype=np.bool)
-    # tt = np.array([0, 1, 1, 0, 0, 0, 1, 1, 0, 1, 1, 0, 0, 0, 1, 1], dtype=np.bool)
-    # GP initializes util=Util(...)
-    g = GP(num_vars=int(np.log2(tt.shape[0])), bin_ops=(sympy.And, sympy.Or), target_tt=tt)
+    # tt = np.array([0, 1, 1, 0, 0, 0, 1, 1], dtype=np.bool)
+    tt = np.array([0, 1, 1, 0, 0, 0, 1, 1] * 2, dtype=np.bool)
+    g = GP(num_vars=int(np.log2(tt.shape[0])),
+           bin_ops=(sympy.And, sympy.Or),
+           target_tt=tt,
+           pop_size=opt.pop_size,
+           size_next_gen=opt.size_next_gen)
     fn = g.util.syms[0] | (g.util.syms[1] & (~g.util.syms[2] | g.util.syms[0]))
     srepr = sympy.srepr(fn)
     mt = tt_to_sympy_minterms(g.util.target_tt)
     sop_form = SOPform(g.util.syms, mt)
 
     try:
-        g.run(num_generations=2000, init_pop_size=10)
+        g.run(num_generations=opt.num_generations, init_pop_size=opt.init_pop_size)
         # g.run()
     except KeyboardInterrupt:
         pass
     g.print_best()
 
-    # g.util.pool.terminate()
-    # with sympy evaluate(False):  # cancel automatic evaluation
+    # g.util.pool.terminate()  # terminated on this process's death, or so it seems
