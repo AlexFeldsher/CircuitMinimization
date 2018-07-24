@@ -153,13 +153,12 @@ class Gate:
         # TODO: hash probably not needed, string comparison should work
         if type(self.gate_inputs) is CircuitInput:
             return
-        input_hash_list = list()
         for _input in self.gate_inputs:
             _input.sort()
-            input_hash_list.append((_input, hash(input)))
-        sorted(input_hash_list, key=itemgetter(1))
+        sorted_inputs = sorted(self.gate_inputs, key=lambda x: repr(x))
 
-        self.gate_inputs = list(list(zip(*input_hash_list))[0])   # unzips the list
+        self.gate_inputs = sorted_inputs   # unzips the list
+        self._update_repr()
 
     def inputs_iter(self):
         """ Iterator for the gate inputs """
