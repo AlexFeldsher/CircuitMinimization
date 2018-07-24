@@ -405,7 +405,7 @@ def replace_gate_with_action(state: State, action: Gate, queue: mp.Queue) -> Non
     # Replacing gates with action
     for gate in state.state:
         # can't replace the inputs (identity gates) and can only replace gates with the same number of inputs
-        if gate.type != Gate.IDENTITY_GATE.type and gate.n_inputs == action.n_inputs:
+        if gate.type != Gate.IDENTITY_GATE.type and gate.n_inputs == action.n_inputs and gate.type != action.type:
             root = deepcopy(state.state)
             gate_copy = root[gate]
             # Convert the gate to the action gate type
