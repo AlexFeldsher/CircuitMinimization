@@ -150,7 +150,6 @@ class Gate:
     def sort(self):
         """ Defines a standard tree structure to prevent isomorphic circuits to be considered not equal
             Works only because the Gate hash method hashes a string representation of the circuit """
-        # TODO: hash probably not needed, string comparison should work
         if type(self.gate_inputs) is CircuitInput:
             return
         for _input in self.gate_inputs:
@@ -254,6 +253,7 @@ class State:
         if gate is None:
             return
 
+
         self.outputs.add(gate)
         # log(self.get_outputs, gate, gate.height, self.outputs)
         for gate in gate.inputs_iter():
@@ -267,7 +267,6 @@ class State:
             Uses multiprocessing to create circuits simultaneously
             :param action: the gate type we want to add to the current circuit """
         successors = set()
-        successors.add(self.state)  # add the previous circuit for backtracking
 
         queue = mp.Queue()   # shared thread safe data structure
         p1 = mp.Process(target=attach_gate_at_end, args=(self, action, queue))
@@ -439,4 +438,7 @@ def remove_gate_from_circuit(state: State, action: Gate, queue: mp.Queue) -> Non
                         queue.put(deepcopy(root))
                 root = deepcopy(state.state)  # create a copy of the circuit
                 prev = g
+        elif gate == state.state:
+            for _input in gate.inputs_iter():
+                queue.put(deepcopy(_input))
 
