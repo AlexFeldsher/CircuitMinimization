@@ -291,8 +291,6 @@ class State:
         p4.join()
 
         # sorting by gate distance from the input (for bfs)
-        sorted_list = list(successors.difference({self.state}))
-        sorted_list.sort()
         log(self.get_successors, "(action, height, state, successors)", action.type, self.state.height, self.state,
             successors)
 
