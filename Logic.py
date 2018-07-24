@@ -384,7 +384,7 @@ def insert_gate_into_circuit(state: State, action: Gate, queue: mp.Queue) -> Non
             root = deepcopy(state.state)  # create a deep copy of the circuit
             gate_copy = root[gate]  # get a pointer to the gate in the copied circuit
             # possible gates to interface with are at height[gate_copy] - 1
-            possible_outputs = filter(lambda x: x.height < gate_copy.height - 1, state.outputs)
+            possible_outputs = filter(lambda x: x.height < gate_copy.height, state.outputs)
             new_gate = action.__copy__()  # create the new gate
             # add all the possible combinations to the new gate inputs
             for combination in itertools.combinations(possible_outputs, new_gate.n_inputs):
