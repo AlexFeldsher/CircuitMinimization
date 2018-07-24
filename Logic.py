@@ -438,7 +438,7 @@ def remove_gate_from_circuit(state: State, action: Gate, queue: mp.Queue) -> Non
                         queue.put(deepcopy(root))
                 root = deepcopy(state.state)  # create a copy of the circuit
                 prev = g
-        elif gate == state.state:
+        elif gate == state.state and gate.type == action.type:
             for _input in gate.inputs_iter():
                 queue.put(deepcopy(_input))
 
