@@ -1,4 +1,6 @@
 import argparse
+import datetime
+import sys
 import os
 import time
 import tempfile
@@ -13,6 +15,7 @@ from sympy.printing.dot import dotprint
 from sympy.logic import SOPform
 import multiprocessing
 
+global logfile
 
 class Util:
     BIN_OPS_MAP = {sympy.And: '&', sympy.Or: '|', sympy.Xor: '^'}  # isn't there a sympy mapping somewhere? anyway, extend as needed
@@ -211,12 +214,12 @@ class Util:
         %%timeit
         F = sympy.Lambda(syms, srepr)
         tt_f = np.array([F(*r) for r in tt_vars])
-        2.71 ms ± 257 µs per loop (mean ± std. dev. of 7 runs, 100 loops each)
+        2.71 ms  257 µs per loop (mean  std. dev. of 7 runs, 100 loops each)
         
         %%timeit
         f = sympy.lambdify(syms, srepr)
         tt_f = f(*tt_vars_lists)
-        1.65 ms ± 73 µs per loop (mean ± std. dev. of 7 runs, 1000 loops each)
+        1.65 ms  73 µs per loop (mean  std. dev. of 7 runs, 1000 loops each)
         '''
 
         # number of gates
@@ -291,19 +294,25 @@ class GP:
             self.sreprs[i] = r_srepr
 
     def run(self, num_generations=10, init_pop_size=1000):
+        global logfile
         print('init population...', end=' ', flush=True)
+        print('init population...', end=' ', flush=True, file=logfile)
         self._init_population(init_pop_size=init_pop_size)
         print('done')
+        print('done', file=logfile)
 
         print('starting search')
+        print('starting search', file=logfile)
         for generation in range(num_generations):
             # print current status
-
-            print('generation {0}/{1}   best fitness: {2}     best accuracy: {3}'.format(
+            logstr = 'generation {0}/{1}   best fitness: {2}     best accuracy: {3}'.format(
                 generation,
                 num_generations,
                 self.population[self.population.fitness.argmax()],
-                self.population[self.population.accuracy.argmax()]))
+                self.population[self.population.accuracy.argmax()])
+
+            print(logstr)
+            print(logstr, file=logfile)
 
             # get parents probability distribution - fitter sreprs are better picks as parents
             fitness = self.population.fitness.copy()
@@ -336,20 +345,20 @@ class GP:
                 self.population[wi] = (c_fitness, c_accuracy, c_numgates)
                 self.sreprs[wi] = child
 
-        print()
-        print('Finished!')
+        print(file=logfile)
+        print('Finished!', file=logfile)
 
-    def print_best(self):
+    def print_best(self, file=sys.stdout):
         best_fitness_index = self.population.fitness.argmax()
         best_accuracy_index = self.population.accuracy.argmax()
         print('best fitness: {0}     best accuracy: {1}'.format(
             self.population[best_fitness_index],
             self.population[best_accuracy_index]
-        ))
-        print()
-        print(self.sreprs[best_fitness_index])
-        print()
-        print(self.sreprs[best_accuracy_index])
+        ), file=file)
+        print(file=file)
+        print(self.sreprs[best_fitness_index], file=file)
+        print(file=file)
+        print(self.sreprs[best_accuracy_index], file=file)
 
 
 def tt_to_sympy_minterms(tt):
@@ -388,16 +397,34 @@ opt = parser.parse_args()
 assert opt.size_next_gen % 2 == 0, 'size_next_gen must be even (each parent couple produces 2 offspring)'
 
 args = vars(opt)
-print('------------ Options -------------')
-for k, v in sorted(args.items()):
-    print('%s: %s' % (str(k), str(v)))
-print('-------------- End ----------------')
+
+def print_args(args, file=sys.stdout):
+    print('------------ Options -------------', file=file)
+    for k, v in sorted(args.items()):
+        print('%s: %s' % (str(k), str(v)), file=file)
+    print('-------------- End ----------------', file=file)
+    
+print_args(args)
 
 
 if __name__ == '__main__':
+    global logfile
     # just for some playing around:
     # tt = np.array([0, 1, 1, 0, 0, 0, 1, 1], dtype=np.bool)
-    tt = np.array([0, 1, 1, 0, 0, 0, 1, 1] * 1, dtype=np.bool)
+    dirname = os.path.dirname(os.path.realpath(sys.argv[0]))
+    logdir = os.path.join(dirname, 'logs')
+    try:
+        os.mkdir(logdir)
+    except FileExistsError:
+        pass
+    logname = os.path.join(logdir, '{0:%Y-%m-%d_%H-%M-%S}.txt'.format(datetime.datetime.now()))
+    print(logname)
+    logfile = open(logname, 'w')
+    print_args(args, logfile)
+    
+    tt = np.array([0, 1, 1, 0, 0, 0, 1, 1] * 128, dtype=np.bool)
+    print(tt.tolist())
+    print(tt.tolist(), file=logfile)
     g = GP(num_vars=int(np.log2(tt.shape[0])),
            unique_pop=opt.unique_pop,
            bin_ops=(sympy.And, sympy.Or),
@@ -418,6 +445,6 @@ if __name__ == '__main__':
         # g.run()
     except KeyboardInterrupt:
         pass
-    g.print_best()
+    g.print_best(logfile)
 
     # g.util.pool.terminate()  # terminated on this process's death, or so it seems
