@@ -1,3 +1,4 @@
+from lru import LRU
 import argparse
 import datetime
 import sys
@@ -75,7 +76,7 @@ class Util:
     def __setstate__(self, state):
         self.__dict__.update(state)
 
-    def simple_random_srepr(self, nsymbols=5):  # FIXME: some other val
+    def simple_random_srepr(self, nsymbols=15):  # FIXME: some other val
         """there's probably some better way."""  # TODO: investigate
         NOT_PROB = 0.5
         PAREN_PROB = 0.2
@@ -236,7 +237,7 @@ class Util:
 
     def init_one(self, _=0):
         """just here so we can parallelize population init"""
-        some_srepr = self.simple_random_srepr(nsymbols=5)  # FIXME: other nsymbols?
+        some_srepr = self.simple_random_srepr(nsymbols=15)  # FIXME: other nsymbols?
         some_fitness, some_accuracy, some_ng = self.fitness(some_srepr)
         return some_fitness, some_accuracy, some_ng, some_srepr
 
@@ -276,7 +277,7 @@ class GP:
 
         self.unique_pop = unique_pop
         self.util = Util(**kwargs)
-        self.cache = {}
+        self.cache = LRU(10000)
 
     def _init_population(self, init_pop_size=1000):
         # fitness and srepr structure array dtype
@@ -332,12 +333,17 @@ class GP:
             next_gen = g.util.pool.map(g.util.create_next_gen, parents_sreprs)
             flat_next_gen = [s for sc in next_gen for s in sc]
             next_gen_noncached_srepr = [srepr for srepr in flat_next_gen if srepr not in self.cache]
+            next_gen_cached_srepr = [srepr for srepr in flat_next_gen if srepr in self.cache]
             next_gen_noncached_fitness = g.util.pool.map(g.util.fitness, next_gen_noncached_srepr)
 
-            self.cache.update(zip(next_gen_noncached_srepr, next_gen_noncached_fitness))
+            to_update = dict(zip(next_gen_noncached_srepr, next_gen_noncached_fitness))
 
-            next_gen_sreprs = flat_next_gen if not self.unique_pop else next_gen_noncached_srepr
-            next_gen_fitness = [(srepr,) + self.cache[srepr] for srepr in next_gen_sreprs]
+            #next_gen_sreprs = flat_next_gen if not self.unique_pop else next_gen_noncached_srepr
+            next_gen_fitness = [(srepr,) + to_update[srepr] for srepr in next_gen_noncached_srepr]
+            if not self.unique_pop:
+                next_gen_fitness += [(srepr,) + self.cache[srepr] for srepr in next_gen_cached_srepr]
+
+            self.cache.update(to_update)
 
             for wi, children in zip(worst_indices, next_gen_fitness):
                 # child0, c0_fitness, c0_accuracy, c0_numgates, child1, c1_fitness, c1_accuracy, c1_numgates = children
@@ -380,17 +386,17 @@ def tt_to_sympy_minterms(tt):
 
 parser = argparse.ArgumentParser()
 
-parser.add_argument('--pop_size', type=int, default=100000, help='total population size - worst are removed if too many')
-parser.add_argument('--init_pop_size', type=int, default=100, help='initial population size')
+parser.add_argument('--pop_size', type=int, default=20000, help='total population size - worst are removed if too many')
+parser.add_argument('--init_pop_size', type=int, default=2000, help='initial population size')
 parser.add_argument('--size_next_gen', type=int, default=300, help='how many offspring in each generation. MUST BE EVEN')
 parser.add_argument('--lucky_per', type=float, default=0.05, help='what percentage of next gen size is taken *uniformly* at random')
-parser.add_argument('--num_generations', type=int, default=1000, help='total number of generation to run')
+parser.add_argument('--num_generations', type=int, default=20000, help='total number of generation to run')
 parser.add_argument('--mutate_prob', type=float, default=0.05, help='probability of mutation of children')
 
 parser.add_argument('--weight_num_gates', type=float, default=-0.1, help='score weight of number of gates')
 parser.add_argument('--weight_num_agree', type=float, default=10, help='score weight of number of agreeing lines of srepr and target_tt')
 
-parser.add_argument('--unique_pop', type=bool, default=False, help='whether the population accepts existing members')
+parser.add_argument('--unique_pop', type=bool, default=False, help='whether the population does not reinsert existing members')
 
 opt = parser.parse_args()
 
@@ -422,7 +428,8 @@ if __name__ == '__main__':
     logfile = open(logname, 'w')
     print_args(args, logfile)
     
-    tt = np.array([0, 1, 1, 0, 0, 0, 1, 1] * 128, dtype=np.bool)
+    # tt = np.array([0, 1, 1, 0, 0, 0, 1, 1] * 128, dtype=np.bool)
+    tt = np.random.randint(2, size=128, dtype=bool)
     print(tt.tolist())
     print(tt.tolist(), file=logfile)
     g = GP(num_vars=int(np.log2(tt.shape[0])),
