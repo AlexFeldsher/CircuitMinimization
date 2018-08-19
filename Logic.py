@@ -5,6 +5,7 @@ import time
 import types
 from copy import deepcopy
 from typing import TypeVar, Sequence, Mapping, Union, List, Set
+import math
 from operator import itemgetter
 
 import Search
@@ -190,7 +191,7 @@ class Gate:
     def num_of_gates(self) -> int:
         """ The number of unique gates in the circuit """
         if type(self.gate_inputs) is CircuitInput:
-            return 0
+            return 1
         set_of_gates = set()
         for gate in self:
             set_of_gates.add(repr(gate))
@@ -290,8 +291,7 @@ class State:
         p4.join()
 
         # sorting by gate distance from the input (for bfs)
-        log(self.get_successors, "(action, height, state, successors)", action.type, self.state.height, self.state,
-            successors)
+        log(self.get_successors, "(action, height, state)", action.type, self.state.height, self.state)
 
         return successors
 
@@ -336,7 +336,7 @@ class Problem(Search.Problem):
         for action in actions:
             succ = state.get_successors(action)
             successors = successors.union(succ)
-        log(self.actions, state, successors)
+        #log(self.actions, state, successors)
         return successors
 
     def result(self, state: State, action: Gate) -> State:
@@ -350,18 +350,19 @@ class Problem(Search.Problem):
         return res
 
     def value(self, state: State) -> int:
-        # TODO: define a real state value
         # simulated annealing loo
         counter = 0
         for _input, output in state.truth_table.items():
-            if state.evaluate(_input, state.state) != output:
+            if state.evaluate(_input, state.state) == output:
                 counter += 1
 
-        correct_normalized = counter/len(state.truth_table) + state.state.num_of_gates()/len(state.truth_table)
-        val = correct_normalized
+        #score = math.sqrt((counter/len(state.truth_table))**2 + (1/state.state.num_of_gates())**2)
+        score = math.exp(counter/(len(state.truth_table)/3)) + (2/(3*state.state.num_of_gates()))
         log(self.value, state.state, "counter",  counter)
-        log(self.value, state.state, "value", val)
-        return -1*val
+        log(self.value, state.state, "score", score)
+        log(self.value, state.state, "num of gates", state.state.num_of_gates())
+        log(self.value, state.state, "height", state.state.height)
+        return score
 
 
 # ------------------- State get_successors helper functions ------------------------------

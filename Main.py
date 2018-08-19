@@ -1,5 +1,6 @@
 import Logic
 import Search
+import math
 
 """
 gates = [Gate('AND', lambda x, y: x and y, 2),
@@ -36,7 +37,7 @@ gates = [Logic.Gate('AND', _and, 2),
          Logic.Gate('OR', _or, 2),
          Logic.Gate('NOT', _not, 1)]
 
-#gates = [Logic.Gate('NAND', lambda x, y: not (x and y), 2)]
+gates_nand = [Logic.Gate('NAND', _nand, 2)]
 
 
 half_adder = {(False, False): False,
@@ -126,13 +127,14 @@ mux4_1 = {(False, False, False, False, False, False): False,
           (True, True, False, True, True, True): True,
           (True, True, True, True, True, True): True}
 
+
 def _example(truth_table, _gates, n_inputs):
 
 
     initial_state = Logic.State(_gates, truth_table, n_inputs)
 
     problem = Logic.Problem(initial_state)
-    solution = Search.simulated_annealing(problem, Search.exp_schedule(5, 0.005, 5000))
+    solution = Search.simulated_annealing(problem, Search.exp_schedule(1, 0.1, 1000))
     print("solution with simulated annealing", solution.state)
 
     #print("solution with bfs", Search.breadth_first_graph_search(problem).state.state)
