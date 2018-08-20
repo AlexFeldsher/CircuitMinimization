@@ -191,10 +191,12 @@ class Gate:
     def num_of_gates(self) -> int:
         """ The number of unique gates in the circuit """
         if type(self.gate_inputs) is CircuitInput:
-            return 1
+            return 0
         set_of_gates = set()
         for gate in self:
-            set_of_gates.add(repr(gate))
+            if gate.type != 'ID' and type(gate) is not CircuitInput:
+                set_of_gates.add(repr(gate))
+        log(self.num_of_gates, self, set_of_gates, len(set_of_gates))
         return len(set_of_gates)
 
     # --------------------- Private methods -------------------------------
@@ -216,7 +218,7 @@ Gate.IDENTITY_GATE = Gate(gate_type='ID', logic=_IDENTITY, n_inputs=1)     # def
 class State:
 
     def __init__(self, gates: Sequence[Gate], truth_table: Mapping[Sequence[bool], bool], n_inputs: int,
-                 initial_state: Union[Gate, None] = None):
+                 initial_state: Union[Gate, None] = None, gate_limit=float('inf')):
         # log(self.__init__, initial_state, truth_table, n_inputs)
         self.state = initial_state
         self.n_inputs = n_inputs
@@ -226,6 +228,8 @@ class State:
 
         self.truth_table = truth_table
         self.gates = gates
+
+        self.gate_limit = gate_limit
 
         # initialize the state with an identity gate for the first circuit input
         if self.state is None:
@@ -243,7 +247,7 @@ class State:
         return hash(repr(self.state))
 
     def __copy__(self) -> 'State':
-        return State(self.gates, self.truth_table, self.n_inputs, self.state)
+        return State(self.gates, self.truth_table, self.n_inputs, self.state, self.gate_limit)
 
     def get_outputs(self, gate: Gate) -> None:
         """ Every gate output in the given circuit is an 'output' that the next gate can interface with """
@@ -270,23 +274,30 @@ class State:
         successors = set()
 
         queue = mp.Queue()   # shared thread safe data structure
-        p1 = mp.Process(target=attach_gate_at_end, args=(self, action, queue))
-        p2 = mp.Process(target=insert_gate_into_circuit, args=(self, action, queue))
+        if self.state.num_of_gates() < self.gate_limit:
+            p1 = mp.Process(target=attach_gate_at_end, args=(self, action, queue))
+            p2 = mp.Process(target=insert_gate_into_circuit, args=(self, action, queue))
+            p1.start()
+            p2.start()
         p3 = mp.Process(target=replace_gate_with_action, args=(self, action, queue))
         p4 = mp.Process(target=remove_gate_from_circuit, args=(self, action, queue))
 
-        p1.start()
-        p2.start()
         p3.start()
         p4.start()
 
         # extract successors from queue
-        while p1.is_alive() or p2.is_alive() or p3.is_alive() or p4.is_alive():
-            while not queue.empty():
-                successors.add(queue.get())
+        if self.state.num_of_gates() < self.gate_limit:
+            while p1.is_alive() or p2.is_alive() or p3.is_alive() or p4.is_alive():
+                while not queue.empty():
+                    successors.add(queue.get())
+        else:
+            while p3.is_alive() or p4.is_alive():
+                while not queue.empty():
+                    successors.add(queue.get())
 
-        p1.join()
-        p2.join()
+        if self.state.num_of_gates() < self.gate_limit:
+            p1.join()
+            p2.join()
         p3.join()
         p4.join()
 
@@ -357,7 +368,7 @@ class Problem(Search.Problem):
                 counter += 1
 
         #score = math.sqrt((counter/len(state.truth_table))**2 + (1/state.state.num_of_gates())**2)
-        score = math.exp(counter/(len(state.truth_table)/3)) + (2/(3*state.state.num_of_gates()))
+        score = math.exp(counter/(len(state.truth_table)/3)) + (2/(3*state.state.num_of_gates() + 1))
         log(self.value, state.state, "counter",  counter)
         log(self.value, state.state, "score", score)
         log(self.value, state.state, "num of gates", state.state.num_of_gates())
