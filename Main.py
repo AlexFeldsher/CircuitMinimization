@@ -131,10 +131,10 @@ mux4_1 = {(False, False, False, False, False, False): False,
 def _example(truth_table, _gates, n_inputs):
 
 
-    initial_state = Logic.State(_gates, truth_table, n_inputs)
+    initial_state = Logic.State(_gates, truth_table, n_inputs, gate_limit=10)
 
     problem = Logic.Problem(initial_state)
-    solution = Search.simulated_annealing(problem, Search.exp_schedule(1, 0.1, 1000))
+    solution = Search.simulated_annealing(problem, Search.exp_schedule(1, 0.05, 2000))
     print("solution with simulated annealing", solution.state)
 
     #print("solution with bfs", Search.breadth_first_graph_search(problem).state.state)

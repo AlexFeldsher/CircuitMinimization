@@ -196,7 +196,7 @@ class Gate:
         for gate in self:
             if gate.type != 'ID' and type(gate) is not CircuitInput:
                 set_of_gates.add(repr(gate))
-        log(self.num_of_gates, self, set_of_gates, len(set_of_gates))
+        #log(self.num_of_gates, self, set_of_gates, len(set_of_gates))
         return len(set_of_gates)
 
     # --------------------- Private methods -------------------------------
@@ -289,11 +289,15 @@ class State:
         if self.state.num_of_gates() < self.gate_limit:
             while p1.is_alive() or p2.is_alive() or p3.is_alive() or p4.is_alive():
                 while not queue.empty():
-                    successors.add(queue.get())
+                    s = queue.get()
+                    if s.num_of_gates() < self.gate_limit:
+                        successors.add(s)
         else:
             while p3.is_alive() or p4.is_alive():
                 while not queue.empty():
-                    successors.add(queue.get())
+                    s = queue.get()
+                    if s.num_of_gates() < self.gate_limit:
+                        successors.add(s)
 
         if self.state.num_of_gates() < self.gate_limit:
             p1.join()
@@ -368,7 +372,10 @@ class Problem(Search.Problem):
                 counter += 1
 
         #score = math.sqrt((counter/len(state.truth_table))**2 + (1/state.state.num_of_gates())**2)
-        score = math.exp(counter/(len(state.truth_table)/3)) + (2/(3*state.state.num_of_gates() + 1))
+        #score = math.exp(counter/(len(state.truth_table)/3)) + (2/(3*state.state.num_of_gates() + 1))
+        #score = ((counter - len(state.truth_table)/2)**2)/(len(state.truth_table)**2) - (state.state.num_of_gates()/state.gate_limit)
+        score = math.exp(counter/(len(state.truth_table)/3)) - (state.state.num_of_gates()/state.gate_limit)
+        #score = math.log(counter/len(state.truth_table)) - math.exp(state.state.num_of_gates()/state.gate_limit)
         log(self.value, state.state, "counter",  counter)
         log(self.value, state.state, "score", score)
         log(self.value, state.state, "num of gates", state.state.num_of_gates())
