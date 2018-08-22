@@ -43,17 +43,14 @@ def truth_table_generator(num_of_variables):
         for i, output in enumerate(seq):
             truth_table[inputs[i]] = output
         truth_tables.append((truth_table, seq))
-    log(truth_table_generator, truth_tables)
+    #log(truth_table_generator, truth_tables)
     return truth_tables
 
 
 def ai(truth_table, n_inputs, limit=float('inf')):
-    log(ai, "(upper gate limit, lower gate limie, height_limit)", limit, limit//3, 6)
-    initial_state = Logic.State(gates, truth_table, n_inputs, gate_limit=limit, gate_l_limit=limit//3, height_limit=6)
+    log(ai, "(upper gate limit, lower gate limit, height_limit)", limit, limit//3, 5)
+    initial_state = Logic.State(gates, truth_table, n_inputs, gate_limit=limit, gate_l_limit=limit//3, height_limit=5)
     problem = Logic.Problem(initial_state)
-    #lam = -0.00002*limit + 0.0052
-    #T = 6.6666*limit + 2100
-    #log(ai,"lam:", lam,"T:", T)
     solution = Search.simulated_annealing(problem, Search.exp_schedule(1, 0.05, 2000))
     #solution = Search.simulated_annealing(problem, Search.exp_schedule(1, lam, T))
     log(ai,"solution with simulated annealing", solution.state)
@@ -67,36 +64,36 @@ def ai(truth_table, n_inputs, limit=float('inf')):
 
 
 def quine_mcluskey(truth_table):
-    x,y,z = symbols('x y z')
+    x,y = symbols('x y')
     minterms = list()
     for key, val in truth_table.items():
         if val == 1:
             minterms.append(list(key))
-    sol = SOPform([x,y,z],minterms)
+    sol = SOPform([x,y],minterms)
     return str(expr(str(sol)))
 
 
 if __name__ == '__main__':
     Logic.DEBUG = False
     Search.DEBUG = False
-    truth_tables = truth_table_generator(3)
-    for t in truth_tables:
-        print("111.111::main::", t)
-    X = exprvars('x', 3)
+    truth_tables = truth_table_generator(2)
+    #for t in truth_tables:
+    #    print("111.111::main::", t)
+    X = exprvars('x', 2)
     random.shuffle(truth_tables)
     for t in truth_tables:
         f = truthtable(X, ''.join(str(i) for i in t[1]))
+        print("111.111::main::", t)
         print("111.111::main::", f)
         print("111.111::main::product of sums form", truthtable2expr(f).to_cnf())
-        print("111.111::main::sum of products form", truthtable2expr(f).to_dnf())
+        print("111.111::main::sum of products form (could be quinemcluskey form)", truthtable2expr(f).to_dnf())
         print("111.111::main::espresso minimization", espresso_exprs(truthtable2expr(f).to_dnf())[0])
-        print("111.111::main::quineMcCluskey form", quine_mcluskey(t[0]))
+        print("111.111::main::quinemcluskey form", quine_mcluskey(t[0]))
         expr_cnf = str(truthtable2expr(f).to_cnf())
         expr_dnf = str(truthtable2expr(f).to_dnf())
         quine_form = str(quine_mcluskey(t[0]))
         limit = min(expr_cnf.count(',') + expr_cnf.count('~'),
-                    expr_dnf.count(',') + expr_dnf.count('~'),
-                    quine_form.count(',') + quine_form.count('~'))
+                    expr_dnf.count(',') + expr_dnf.count('~'))
+                    #quine_form.count(',') + quine_form.count('~'))
         print("111.111::main::limit set to", limit+3)
-        ai(t[0], 3, limit+3)
-
+        ai(t[0], 2, limit+3)
