@@ -218,7 +218,7 @@ Gate.IDENTITY_GATE = Gate(gate_type='ID', logic=_IDENTITY, n_inputs=1)     # def
 class State:
 
     def __init__(self, gates: Sequence[Gate], truth_table: Mapping[Sequence[bool], bool], n_inputs: int,
-                 initial_state: Union[Gate, None] = None, gate_limit=float('inf')):
+                 initial_state: Union[Gate, None] = None, gate_limit=float('inf'), gate_l_limit=0, height_limit=float('inf')):
         # log(self.__init__, initial_state, truth_table, n_inputs)
         self.state = initial_state
         self.n_inputs = n_inputs
@@ -230,6 +230,8 @@ class State:
         self.gates = gates
 
         self.gate_limit = gate_limit
+        self.gate_l_limit = gate_l_limit
+        self.height_limit = height_limit
 
         # initialize the state with an identity gate for the first circuit input
         if self.state is None:
@@ -247,7 +249,7 @@ class State:
         return hash(repr(self.state))
 
     def __copy__(self) -> 'State':
-        return State(self.gates, self.truth_table, self.n_inputs, self.state, self.gate_limit)
+        return State(self.gates, self.truth_table, self.n_inputs, self.state, self.gate_limit, self.gate_l_limit, self.height_limit)
 
     def get_outputs(self, gate: Gate) -> None:
         """ Every gate output in the given circuit is an 'output' that the next gate can interface with """
@@ -272,38 +274,38 @@ class State:
             Uses multiprocessing to create circuits simultaneously
             :param action: the gate type we want to add to the current circuit """
         successors = set()
-
+        processes = list()
         queue = mp.Queue()   # shared thread safe data structure
         if self.state.num_of_gates() < self.gate_limit:
-            p1 = mp.Process(target=attach_gate_at_end, args=(self, action, queue))
+            if self.state.height < self.height_limit:
+                p1 = mp.Process(target=attach_gate_at_end, args=(self, action, queue))
+                processes.append(p1)
+                p1.start()
             p2 = mp.Process(target=insert_gate_into_circuit, args=(self, action, queue))
-            p1.start()
+            processes.append(p2)
             p2.start()
+
         p3 = mp.Process(target=replace_gate_with_action, args=(self, action, queue))
-        p4 = mp.Process(target=remove_gate_from_circuit, args=(self, action, queue))
-
+        processes.append(p3)
         p3.start()
-        p4.start()
 
-        # extract successors from queue
-        if self.state.num_of_gates() < self.gate_limit:
-            while p1.is_alive() or p2.is_alive() or p3.is_alive() or p4.is_alive():
-                while not queue.empty():
-                    s = queue.get()
-                    if s.num_of_gates() < self.gate_limit:
-                        successors.add(s)
-        else:
-            while p3.is_alive() or p4.is_alive():
-                while not queue.empty():
-                    s = queue.get()
-                    if s.num_of_gates() < self.gate_limit:
-                        successors.add(s)
+        if self.state.num_of_gates() > self.gate_l_limit:
+            p4 = mp.Process(target=remove_gate_from_circuit, args=(self, action, queue))
+            processes.append(p4)
+            p4.start()
 
-        if self.state.num_of_gates() < self.gate_limit:
-            p1.join()
-            p2.join()
-        p3.join()
-        p4.join()
+        while True in [p.is_alive() for p in processes]:
+            while not queue.empty():
+                s = queue.get()
+                if s.num_of_gates() < self.gate_limit\
+                        and (s.num_of_gates() > self.gate_l_limit or s.num_of_gates() > self.state.num_of_gates())\
+                        and s.height < self.height_limit:
+                    #log(self.get_successors, "height of successor", s.height)
+                    #log(self.get_successors, "successor", s)
+                    successors.add(s)
+
+        for p in processes:
+            p.join()
 
         # sorting by gate distance from the input (for bfs)
         log(self.get_successors, "(action, height, state)", action.type, self.state.height, self.state)
@@ -374,12 +376,18 @@ class Problem(Search.Problem):
         #score = math.sqrt((counter/len(state.truth_table))**2 + (1/state.state.num_of_gates())**2)
         #score = math.exp(counter/(len(state.truth_table)/3)) + (2/(3*state.state.num_of_gates() + 1))
         #score = ((counter - len(state.truth_table)/2)**2)/(len(state.truth_table)**2) - (state.state.num_of_gates()/state.gate_limit)
-        score = math.exp(counter/(len(state.truth_table)/3)) - (state.state.num_of_gates()/state.gate_limit)
         #score = math.log(counter/len(state.truth_table)) - math.exp(state.state.num_of_gates()/state.gate_limit)
+
         log(self.value, state.state, "counter",  counter)
-        log(self.value, state.state, "score", score)
         log(self.value, state.state, "num of gates", state.state.num_of_gates())
         log(self.value, state.state, "height", state.state.height)
+
+        # used to get to the initial state where the defined limitations hold
+        if state.state.num_of_gates() < state.gate_l_limit or state.state.height > state.height_limit:
+            return -1000
+
+        score = math.exp(counter/len(state.truth_table)) - (state.state.num_of_gates()-state.gate_l_limit)/(state.gate_limit-state.gate_l_limit)
+        log(self.value, state.state, "score", score)
         return score
 
 
