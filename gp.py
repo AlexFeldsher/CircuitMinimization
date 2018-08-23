@@ -18,10 +18,12 @@ import multiprocessing
 
 global logfile
 
-class Util:
-    BIN_OPS_MAP = {sympy.And: '&', sympy.Or: '|', sympy.Xor: '^'}  # isn't there a sympy mapping somewhere? anyway, extend as needed
 
-    def __init__(self, num_vars=3, bin_ops=(sympy.And, sympy.Or), target_tt=None, mutate_prob=0.05, weight_num_agree=20, weight_num_gates=-0.1):
+class Util:
+    BIN_OPS_MAP = {sympy.And: '&', sympy.Or: '|',
+                   sympy.Xor: '^'}  # isn't there a sympy mapping somewhere? anyway, extend as needed
+
+    def __init__(self, num_vars=3, bin_ops=(sympy.And, sympy.Or), target_tt=None, mutate_prob=0.05, weight_num_agree=20, weight_num_gates=-0.1, nsymbols=5):
         """
         Util class for sake of multiprocessing - avoiding passing the large self.population on each call
 
@@ -35,11 +37,11 @@ class Util:
         self.num_vars = num_vars
 
         # symbols we use in the problem
-        self.syms = sympy.symbols('s:'+str(num_vars))  # creates a tuple of (s0, s1, ...s{NUM_VARS-1})
+        self.syms = sympy.symbols('s:' + str(num_vars))  # creates a tuple of (s0, s1, ...s{NUM_VARS-1})
 
         # operations we use in the problem
         self.bin_ops = bin_ops
-        self.ops = bin_ops + (sympy.Not, )
+        self.ops = bin_ops + (sympy.Not,)
 
         # FIXME: "private" some of these
         # some precalced stuff for the functions
@@ -53,14 +55,16 @@ class Util:
         self.or_op_regex = re.compile('|'.join(self.str_ops))
 
         # some truth table, given as a np.array with shape (2**n, )
-        self.target_tt = target_tt if target_tt is not None else np.random.randint(2, size=2**3, dtype=np.bool)
+        self.target_tt = target_tt if target_tt is not None else np.random.randint(2, size=2 ** 3, dtype=np.bool)
 
         self.tt_vars = list(itertools.product([0, 1], repeat=self.num_vars))  # [(0, 0, 0), (0, 0, 1), (0, 1, 0), ...]
-        self.tt_vars_lists = list(zip(*self.tt_vars))  # [(0, 0, 0, 0, 1, 1, 1, 1), (0, 0, 1, 1, 0, 0, 1, 1), (0, 1, 0, 1, 0, 1, 0, 1)]
+        self.tt_vars_lists = list(
+            zip(*self.tt_vars))  # [(0, 0, 0, 0, 1, 1, 1, 1), (0, 0, 1, 1, 0, 0, 1, 1), (0, 1, 0, 1, 0, 1, 0, 1)]
 
         self.mutate_prob = mutate_prob
         self.weight_num_agree = weight_num_agree
         self.weight_num_gates = weight_num_gates
+        self.nsymbols = nsymbols
 
         # create process pool
         self.pool = multiprocessing.Pool(multiprocessing.cpu_count())
@@ -76,13 +80,12 @@ class Util:
     def __setstate__(self, state):
         self.__dict__.update(state)
 
-    def simple_random_srepr(self, nsymbols=15):  # FIXME: some other val
-        """there's probably some better way."""  # TODO: investigate
+    def simple_random_srepr(self):
         NOT_PROB = 0.5
         PAREN_PROB = 0.2
         ret = ''
         n_paren = 0
-        for i in range(nsymbols):
+        for i in range(self.nsymbols):
             if random.random() < NOT_PROB:
                 ret += '~'
             if random.random() < PAREN_PROB:
@@ -140,27 +143,27 @@ class Util:
         # of ' (' (or the beginning of the string)
         before_node = [m.start() for m in re.finditer('[ (]\w*$', srepr[:ropi])]
         bni = before_node[-1] if before_node else -1  # 'else' happens if ropi is first '('
-        node = srepr[bni+1:ropi]
+        node = srepr[bni + 1:ropi]
 
         if 'Symbol' in node:  # replace with another one randomly
             cpi = self.find_cpi(srepr, ropi)
-            symbol = srepr[ropi+2:cpi-1]
+            symbol = srepr[ropi + 2:cpi - 1]
             if random.random() < 0.5:
-                another = random.choice(tuple(self.str_syms-{symbol}))
-                ret = srepr[:ropi+1] + "'" + another + "'" + srepr[cpi:]
+                another = random.choice(tuple(self.str_syms - {symbol}))
+                ret = srepr[:ropi + 1] + "'" + another + "'" + srepr[cpi:]
             else:
-                ret = srepr[:bni+1] + self.simple_random_srepr() + srepr[cpi+1:]
+                ret = srepr[:bni + 1] + self.simple_random_srepr() + srepr[cpi + 1:]
         elif 'Not' in node:  # remove Not
             cpi = self.find_cpi(srepr, ropi)
-            ret = srepr[:bni+1] + srepr[ropi+1:cpi] + srepr[cpi+1:]
+            ret = srepr[:bni + 1] + srepr[ropi + 1:cpi] + srepr[cpi + 1:]
         else:  # it's a binary op
             if random.random() < 0.5:  # replace with another one randomly
-                another = random.choice(tuple(self.str_bin_ops-{node}))
-                ret = srepr[:bni+1] + another + srepr[ropi:]
+                another = random.choice(tuple(self.str_bin_ops - {node}))
+                ret = srepr[:bni + 1] + another + srepr[ropi:]
             else:  # replace tree with a random symbol
                 cpi = self.find_cpi(srepr, ropi)
                 symbol = random.choice(self.tstr_syms)
-                ret = srepr[:bni+1] + "Symbol('" + symbol + "')" + srepr[cpi+1:]
+                ret = srepr[:bni + 1] + "Symbol('" + symbol + "')" + srepr[cpi + 1:]
 
         # assert ret != srepr  # might not be true because the generated random tree might be the same
         return ret
@@ -188,8 +191,8 @@ class Util:
         rep1, cpi1 = self.pick_random_rep(s1, PICK_OP_PROB)
         rep2, cpi2 = self.pick_random_rep(s2, PICK_OP_PROB)
 
-        off1 = s1[:rep1] + s2[rep2:cpi2+1] + s1[cpi1+1:]
-        off2 = s2[:rep2] + s1[rep1:cpi1+1] + s2[cpi2+1:]
+        off1 = s1[:rep1] + s2[rep2:cpi2 + 1] + s1[cpi1 + 1:]
+        off2 = s2[:rep2] + s1[rep1:cpi1 + 1] + s2[cpi2 + 1:]
 
         return off1, off2
 
@@ -216,7 +219,7 @@ class Util:
         F = sympy.Lambda(syms, srepr)
         tt_f = np.array([F(*r) for r in tt_vars])
         2.71 ms  257 µs per loop (mean  std. dev. of 7 runs, 100 loops each)
-        
+
         %%timeit
         f = sympy.lambdify(syms, srepr)
         tt_f = f(*tt_vars_lists)
@@ -237,7 +240,7 @@ class Util:
 
     def init_one(self, _=0):
         """just here so we can parallelize population init"""
-        some_srepr = self.simple_random_srepr(nsymbols=15)  # FIXME: other nsymbols?
+        some_srepr = self.simple_random_srepr()
         some_fitness, some_accuracy, some_ng = self.fitness(some_srepr)
         return some_fitness, some_accuracy, some_ng, some_srepr
 
@@ -258,7 +261,7 @@ class Util:
 
 
 class GP:
-    LOW_FITNESS = -2**31
+    LOW_FITNESS = -2 ** 31
 
     def __init__(self, pop_size=5000, size_next_gen=300, lucky_per=0.10, unique_pop=False, **kwargs):
         """
@@ -284,7 +287,7 @@ class GP:
         pop_dtype = np.dtype([('fitness', '<f4'), ('accuracy', '<f4'), ('numgates', '<i4')])
 
         # population of sreprs and their fitness. this changes throughout the run
-        self.population = np.array([self.LOW_FITNESS]*self.pop_size, dtype=pop_dtype).view(np.recarray)
+        self.population = np.array([self.LOW_FITNESS] * self.pop_size, dtype=pop_dtype).view(np.recarray)
         self.sreprs = [None] * self.pop_size
 
         ret = g.util.pool.map(g.util.init_one, range(init_pop_size))
@@ -321,8 +324,10 @@ class GP:
             fitness[fitness == self.LOW_FITNESS] = real_min  # so no chance they'll be taken
             nz_fitness = fitness - real_min
             # each parent couple generates 2 children
-            best_parents = np.random.choice(np.arange(self.population.shape[0]), size=(int(self.size_best_parents/2), 2), p=nz_fitness/nz_fitness.sum())
-            lucky_parents = np.random.choice(np.arange(self.population.shape[0]), size=(int(self.size_lucky_parents/2), 2))
+            best_parents = np.random.choice(np.arange(self.population.shape[0]),
+                                            size=(int(self.size_best_parents / 2), 2), p=nz_fitness / nz_fitness.sum())
+            lucky_parents = np.random.choice(np.arange(self.population.shape[0]),
+                                             size=(int(self.size_lucky_parents / 2), 2))
             parents = np.concatenate((best_parents, lucky_parents))
 
             parents_sreprs = [(self.sreprs[x[0]], self.sreprs[x[1]]) for x in parents
@@ -338,7 +343,7 @@ class GP:
 
             to_update = dict(zip(next_gen_noncached_srepr, next_gen_noncached_fitness))
 
-            #next_gen_sreprs = flat_next_gen if not self.unique_pop else next_gen_noncached_srepr
+            # next_gen_sreprs = flat_next_gen if not self.unique_pop else next_gen_noncached_srepr
             next_gen_fitness = [(srepr,) + to_update[srepr] for srepr in next_gen_noncached_srepr]
             if not self.unique_pop:
                 next_gen_fitness += [(srepr,) + self.cache[srepr] for srepr in next_gen_cached_srepr]
@@ -388,15 +393,19 @@ parser = argparse.ArgumentParser()
 
 parser.add_argument('--pop_size', type=int, default=20000, help='total population size - worst are removed if too many')
 parser.add_argument('--init_pop_size', type=int, default=2000, help='initial population size')
-parser.add_argument('--size_next_gen', type=int, default=300, help='how many offspring in each generation. MUST BE EVEN')
-parser.add_argument('--lucky_per', type=float, default=0.05, help='what percentage of next gen size is taken *uniformly* at random')
+parser.add_argument('--size_next_gen', type=int, default=300,
+                    help='how many offspring in each generation. MUST BE EVEN')
+parser.add_argument('--lucky_per', type=float, default=0.05,
+                    help='what percentage of next gen size is taken *uniformly* at random')
 parser.add_argument('--num_generations', type=int, default=20000, help='total number of generation to run')
 parser.add_argument('--mutate_prob', type=float, default=0.05, help='probability of mutation of children')
 
 parser.add_argument('--weight_num_gates', type=float, default=-0.1, help='score weight of number of gates')
-parser.add_argument('--weight_num_agree', type=float, default=10, help='score weight of number of agreeing lines of srepr and target_tt')
+parser.add_argument('--weight_num_agree', type=float, default=10,
+                    help='score weight of number of agreeing lines of srepr and target_tt')
 
-parser.add_argument('--unique_pop', type=bool, default=False, help='whether the population does not reinsert existing members')
+parser.add_argument('--unique_pop', type=bool, default=False,
+                    help='whether the population does not reinsert existing members')
 
 opt = parser.parse_args()
 
@@ -404,14 +413,15 @@ assert opt.size_next_gen % 2 == 0, 'size_next_gen must be even (each parent coup
 
 args = vars(opt)
 
+
 def print_args(args, file=sys.stdout):
     print('------------ Options -------------', file=file)
     for k, v in sorted(args.items()):
         print('%s: %s' % (str(k), str(v)), file=file)
     print('-------------- End ----------------', file=file)
-    
-print_args(args)
 
+
+print_args(args)
 
 if __name__ == '__main__':
     global logfile
@@ -427,7 +437,7 @@ if __name__ == '__main__':
     print(logname)
     logfile = open(logname, 'w')
     print_args(args, logfile)
-    
+
     # tt = np.array([0, 1, 1, 0, 0, 0, 1, 1] * 128, dtype=np.bool)
     tt = np.random.randint(2, size=128, dtype=bool)
     print(tt.tolist())
@@ -441,7 +451,7 @@ if __name__ == '__main__':
            lucky_per=opt.lucky_per,
            weight_num_gates=opt.weight_num_gates,
            weight_num_agree=opt.weight_num_agree,
-    )
+           )
     fn = g.util.syms[0] | (g.util.syms[1] & (~g.util.syms[2] | g.util.syms[0]))
     srepr = sympy.srepr(fn)
     mt = tt_to_sympy_minterms(g.util.target_tt)

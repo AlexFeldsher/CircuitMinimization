@@ -48,3 +48,14 @@ Currently using the function provided in the aima library.
 
 ## Run
     python3 Main.py
+
+### Genetic Programming Implementation
+Use pip to install dependencies by executing:
+```
+pip install -r requirements.txt 
+```
+
+Run `gp.py`, see list of available variables by executing:
+```
+python gp.py -h
+```
