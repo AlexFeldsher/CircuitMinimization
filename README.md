@@ -1,53 +1,48 @@
 # CircuitMinimization
 AI final project
 
-This solution uses a graph representation of a circuit, where each node is a Logic gate.
-Each gate is a root of it's own subtree, and his children are the gates that connected to its input.
+### Simulated Annealing Implementation
+requirements are:
 
-### Limitation
-* Currently only works with a single output.
-* No obvious way to support genetic algorithms, since connecting parts of different graphs could be messy.
+    pyeda==0.28.0
+    typing==3.6.4
+```
+python3 simulated_annealing.py -h
 
-### Features
-* Supports a random amount and types of gates, with any number of inputs.
+usage: simulated_annealing.py [-h]
+                              truth_table n_vars k lam limit u_gate_lim
+                              l_gate_lim height_lim
 
-        Gate(name='AND', logic=lambda x,y: x and y, n_params=2)
-        Gate(name='NOT', logic=lambda x: not x, n_params=1)
+Circuit minimization using Simulated Annealing
+
+positional arguments:
+  truth_table  Bits representing a truth table, see truthtable function at
+               "https://pyeda.readthedocs.io/en/latest/boolalg.html#boolean-
+               functions"
+  n_vars       The number of variables
+  k            Parameter k for the scheduler function k*exp(-lam*t)
+  lam          Parameter lam for the scheduler function k*exp(-lam*t)
+  limit        Limit the number of search iterations
+  u_gate_lim   Upper limit for the number of gates
+  l_gate_lim   Lower limit for the number of gates
+  height_lim   Height limit for the resulting circuit
+
+optional arguments:
+  -h, --help   show this help message and exit
+```
+example:
+```
+python3 simulated_annealing.py 0101 2 1 0.05 200 5 0 4
     
-* Works with simulated annealing.
-* Can work with other uninformed/informed searches.
-
-### Circuit who's thy neighbor?
-* All the circuits with an additional gate.
-* All the circuits with a single gate changed.
-* All the circuits with a single gate removed.
-
-### Circuit what's thy value?
-* The circuit with the lowest number of gates that solves the truth table should have the heighst value, since aima's simulated annealing implementation looks for the global maximum.
-
-## Simulated annealing schedule function
-Currently using the function provided in the aima library.
-
-    def exp_schedule(k=20, lam=0.005, limit=100):
-    """One possible schedule function for simulated annealing"""
-        return lambda t: (k * math.exp(-lam * t) if t < limit else 0)
-* High k value - large cicuits are explored and takes longer to converge (also requires higher limit).
-* limit - the number of iterations performed.
-* lam - the rate decline.
-* Coverging to the optimal solution also depend on the circuit value definition.
-
-## TODO
-* Define a value to a circuit.
-* ~~Identify equivalent circuits. Will significantly reduce the search space.~~
-
-        AND(0,OR(1,0)) == AND(OR(0,1),0)
-        
-* Find the optimal simulated annealing schedule function.
-* Find a correct way to implement slicing in the Gate class for genetic algorithms.
-
-
-## Run
-    python3 Main.py
+0101 represents the truth table:
+        x y out
+        0 0  0
+        0 1  1
+        1 0  0
+        1 1  1
+2 variables (x,y), schedule function = 1*exp(-0.05*t),
+upper gate limit is 5, lower gate limit is 0, and height limit is 4
+```
 
 ### Genetic Programming Implementation
 Use pip to install dependencies by executing:
