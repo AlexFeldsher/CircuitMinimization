@@ -1,6 +1,16 @@
 # CircuitMinimization
 AI final project
 
+### Genetic Programming Implementation
+Use pip to install dependencies by executing:
+```
+pip install -r requirements.txt 
+```
+
+Run `gp.py`, see list of available variables by executing:
+```
+python gp.py -h
+```
 ### Simulated Annealing Implementation
 requirements are:
 
@@ -42,15 +52,4 @@ python3 simulated_annealing.py 0101 2 1 0.05 200 5 0 4
         1 1  1
 2 variables (x,y), schedule function = 1*exp(-0.05*t),
 upper gate limit is 5, lower gate limit is 0, and height limit is 4
-```
-
-### Genetic Programming Implementation
-Use pip to install dependencies by executing:
-```
-pip install -r requirements.txt 
-```
-
-Run `gp.py`, see list of available variables by executing:
-```
-python gp.py -h
 ```
