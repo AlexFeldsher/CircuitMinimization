@@ -1,11 +1,3 @@
-# cython: language_level=3, boundscheck=False
-
-"""Search (Chapters 3-4)
-
-The way to use this code is to subclass Problem to create a class of problems,
-then create problem instances and solve them with calls to the various search
-functions."""
-
 from utils import (
     is_in, probability,
 )
@@ -15,7 +7,7 @@ import random
 import sys
 import time
 
-DEBUG = True
+DEBUG = False
 
 
 def log(_method, *args):
@@ -181,4 +173,5 @@ def simulated_annealing(problem, schedule=exp_schedule()):
         prev = current
         if delta_e > 0 or probability(prob):
             current = next_choice
+            print('.', end='') # to show progress when running
 

@@ -1,4 +1,3 @@
-# cython: language_level=3, boundscheck=False
 import itertools
 import multiprocessing as mp
 import time
@@ -6,11 +5,10 @@ import types
 from copy import deepcopy
 from typing import TypeVar, Sequence, Mapping, Union, List, Set
 import math
-from operator import itemgetter
 
 import Search
 
-DEBUG = True
+DEBUG = False
 
 CircuitInput = int  # For readability
 GateInputs = TypeVar('Params', List[Union['Gate', 'CircuitInput']], 'CircuitInput')
@@ -59,7 +57,6 @@ class Gate:
         return self.__repr__() == repr(other)
 
     def __lt__(self, other: 'Gate') -> bool:
-        # TODO: define what it means circuit1 < circuit2
         return self.height < other.height
 
     def __copy__(self) -> 'Gate':
@@ -83,11 +80,9 @@ class Gate:
         return hash(self.__repr__())
 
     def __len__(self) -> int:
-        # TODO: why is len define and should it be the number of gates in the circuit?
         return self.height
 
     def __getitem__(self, item: 'Gate') -> 'Gate':
-        # TODO: have to implement slicing for genetic algorithms
         # returns gate == item in the circuit
         if type(item) is Gate:
             for gate in self:
@@ -162,7 +157,6 @@ class Gate:
 
     def inputs_iter(self):
         """ Iterator for the gate inputs """
-        # TODO: unnecessary method
         if type(self.gate_inputs) is CircuitInput:
             return self.gate_inputs
         for _input in self.gate_inputs:
@@ -196,7 +190,6 @@ class Gate:
         for gate in self:
             if gate.type != 'ID' and type(gate) is not CircuitInput:
                 set_of_gates.add(repr(gate))
-        #log(self.num_of_gates, self, set_of_gates, len(set_of_gates))
         return len(set_of_gates)
 
     # --------------------- Private methods -------------------------------
@@ -219,7 +212,6 @@ class State:
 
     def __init__(self, gates: Sequence[Gate], truth_table: Mapping[Sequence[bool], bool], n_inputs: int,
                  initial_state: Union[Gate, None] = None, gate_limit=float('inf'), gate_l_limit=0, height_limit=float('inf')):
-        # log(self.__init__, initial_state, truth_table, n_inputs)
         self.state = initial_state
         self.n_inputs = n_inputs
 
@@ -260,9 +252,7 @@ class State:
         if gate is None:
             return
 
-
         self.outputs.add(gate)
-        # log(self.get_outputs, gate, gate.height, self.outputs)
         for gate in gate.inputs_iter():
             self.get_outputs(gate)
 
@@ -300,8 +290,6 @@ class State:
                 if s.num_of_gates() < self.gate_limit\
                         and (s.num_of_gates() > self.gate_l_limit or s.num_of_gates() > self.state.num_of_gates())\
                         and s.height < self.height_limit:
-                    #log(self.get_successors, "height of successor", s.height)
-                    #log(self.get_successors, "successor", s)
                     successors.add(s)
 
         for p in processes:
@@ -316,7 +304,6 @@ class State:
         state = self.__copy__()
         state.state = action
         state.get_outputs(action)
-        # log(self.apply_action, action, state)
         return state
 
     def evaluate(self, _input: Sequence[bool], gate: Union[Gate, CircuitInput]):
@@ -333,10 +320,8 @@ class State:
 
     def is_goal(self) -> bool:
         """ Returns true if self.state evaluates correct for the entire truth table """
-        #log(self.is_goal)
         for _input, output in self.truth_table.items():
             if self.evaluate(_input, self.state) != output:
-                #log(self.is_goal, self.evaluate(_input, self.state), "<>", output)
                 return False
         return True
 
@@ -353,12 +338,10 @@ class Problem(Search.Problem):
         for action in actions:
             succ = state.get_successors(action)
             successors = successors.union(succ)
-        #log(self.actions, state, successors)
         return successors
 
     def result(self, state: State, action: Gate) -> State:
         res = state.apply_action(action)
-        # log(self.result, state, action, res)
         return res
 
     def goal_test(self, state: State) -> bool:
@@ -372,11 +355,6 @@ class Problem(Search.Problem):
         for _input, output in state.truth_table.items():
             if state.evaluate(_input, state.state) == output:
                 counter += 1
-
-        #score = math.sqrt((counter/len(state.truth_table))**2 + (1/state.state.num_of_gates())**2)
-        #score = math.exp(counter/(len(state.truth_table)/3)) + (2/(3*state.state.num_of_gates() + 1))
-        #score = ((counter - len(state.truth_table)/2)**2)/(len(state.truth_table)**2) - (state.state.num_of_gates()/state.gate_limit)
-        #score = math.log(counter/len(state.truth_table)) - math.exp(state.state.num_of_gates()/state.gate_limit)
 
         log(self.value, state.state, "counter",  counter)
         log(self.value, state.state, "num of gates", state.state.num_of_gates())
