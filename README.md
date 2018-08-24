@@ -50,6 +50,6 @@ python3 simulated_annealing.py 0101 2 1 0.05 200 5 0 4
         0 1  1
         1 0  0
         1 1  1
-2 variables (x,y), schedule function = 1*exp(-0.05*t),
+2 variables (x,y), schedule function = 1*exp(-0.05*t), 200 iterations limit
 upper gate limit is 5, lower gate limit is 0, and height limit is 4
 ```
