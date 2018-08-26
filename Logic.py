@@ -1,15 +1,14 @@
-# cython: language_level=3, boundscheck=False
 import itertools
 import multiprocessing as mp
 import time
 import types
 from copy import deepcopy
 from typing import TypeVar, Sequence, Mapping, Union, List, Set
-from operator import itemgetter
+import math
 
 import Search
 
-DEBUG = True
+DEBUG = False
 
 CircuitInput = int  # For readability
 GateInputs = TypeVar('Params', List[Union['Gate', 'CircuitInput']], 'CircuitInput')
@@ -58,7 +57,6 @@ class Gate:
         return self.__repr__() == repr(other)
 
     def __lt__(self, other: 'Gate') -> bool:
-        # TODO: define what it means circuit1 < circuit2
         return self.height < other.height
 
     def __copy__(self) -> 'Gate':
@@ -82,11 +80,9 @@ class Gate:
         return hash(self.__repr__())
 
     def __len__(self) -> int:
-        # TODO: why is len define and should it be the number of gates in the circuit?
         return self.height
 
     def __getitem__(self, item: 'Gate') -> 'Gate':
-        # TODO: have to implement slicing for genetic algorithms
         # returns gate == item in the circuit
         if type(item) is Gate:
             for gate in self:
@@ -161,7 +157,6 @@ class Gate:
 
     def inputs_iter(self):
         """ Iterator for the gate inputs """
-        # TODO: unnecessary method
         if type(self.gate_inputs) is CircuitInput:
             return self.gate_inputs
         for _input in self.gate_inputs:
@@ -193,7 +188,8 @@ class Gate:
             return 0
         set_of_gates = set()
         for gate in self:
-            set_of_gates.add(repr(gate))
+            if gate.type != 'ID' and type(gate) is not CircuitInput:
+                set_of_gates.add(repr(gate))
         return len(set_of_gates)
 
     # --------------------- Private methods -------------------------------
@@ -215,8 +211,7 @@ Gate.IDENTITY_GATE = Gate(gate_type='ID', logic=_IDENTITY, n_inputs=1)     # def
 class State:
 
     def __init__(self, gates: Sequence[Gate], truth_table: Mapping[Sequence[bool], bool], n_inputs: int,
-                 initial_state: Union[Gate, None] = None):
-        # log(self.__init__, initial_state, truth_table, n_inputs)
+                 initial_state: Union[Gate, None] = None, gate_limit=float('inf'), gate_l_limit=0, height_limit=float('inf')):
         self.state = initial_state
         self.n_inputs = n_inputs
 
@@ -225,6 +220,10 @@ class State:
 
         self.truth_table = truth_table
         self.gates = gates
+
+        self.gate_limit = gate_limit
+        self.gate_l_limit = gate_l_limit
+        self.height_limit = height_limit
 
         # initialize the state with an identity gate for the first circuit input
         if self.state is None:
@@ -242,7 +241,7 @@ class State:
         return hash(repr(self.state))
 
     def __copy__(self) -> 'State':
-        return State(self.gates, self.truth_table, self.n_inputs, self.state)
+        return State(self.gates, self.truth_table, self.n_inputs, self.state, self.gate_limit, self.gate_l_limit, self.height_limit)
 
     def get_outputs(self, gate: Gate) -> None:
         """ Every gate output in the given circuit is an 'output' that the next gate can interface with """
@@ -253,9 +252,7 @@ class State:
         if gate is None:
             return
 
-
         self.outputs.add(gate)
-        # log(self.get_outputs, gate, gate.height, self.outputs)
         for gate in gate.inputs_iter():
             self.get_outputs(gate)
 
@@ -267,31 +264,39 @@ class State:
             Uses multiprocessing to create circuits simultaneously
             :param action: the gate type we want to add to the current circuit """
         successors = set()
-
+        processes = list()
         queue = mp.Queue()   # shared thread safe data structure
-        p1 = mp.Process(target=attach_gate_at_end, args=(self, action, queue))
-        p2 = mp.Process(target=insert_gate_into_circuit, args=(self, action, queue))
+        if self.state.num_of_gates() < self.gate_limit:
+            if self.state.height < self.height_limit:
+                p1 = mp.Process(target=attach_gate_at_end, args=(self, action, queue))
+                processes.append(p1)
+                p1.start()
+            p2 = mp.Process(target=insert_gate_into_circuit, args=(self, action, queue))
+            processes.append(p2)
+            p2.start()
+
         p3 = mp.Process(target=replace_gate_with_action, args=(self, action, queue))
-        p4 = mp.Process(target=remove_gate_from_circuit, args=(self, action, queue))
-
-        p1.start()
-        p2.start()
+        processes.append(p3)
         p3.start()
-        p4.start()
 
-        # extract successors from queue
-        while p1.is_alive() or p2.is_alive() or p3.is_alive() or p4.is_alive():
+        if self.state.num_of_gates() > self.gate_l_limit:
+            p4 = mp.Process(target=remove_gate_from_circuit, args=(self, action, queue))
+            processes.append(p4)
+            p4.start()
+
+        while True in [p.is_alive() for p in processes]:
             while not queue.empty():
-                successors.add(queue.get())
+                s = queue.get()
+                if s.num_of_gates() < self.gate_limit\
+                        and (s.num_of_gates() > self.gate_l_limit or s.num_of_gates() > self.state.num_of_gates())\
+                        and s.height < self.height_limit:
+                    successors.add(s)
 
-        p1.join()
-        p2.join()
-        p3.join()
-        p4.join()
+        for p in processes:
+            p.join()
 
         # sorting by gate distance from the input (for bfs)
-        log(self.get_successors, "(action, height, state, successors)", action.type, self.state.height, self.state,
-            successors)
+        log(self.get_successors, "(action, height, state)", action.type, self.state.height, self.state)
 
         return successors
 
@@ -299,7 +304,6 @@ class State:
         state = self.__copy__()
         state.state = action
         state.get_outputs(action)
-        # log(self.apply_action, action, state)
         return state
 
     def evaluate(self, _input: Sequence[bool], gate: Union[Gate, CircuitInput]):
@@ -316,10 +320,8 @@ class State:
 
     def is_goal(self) -> bool:
         """ Returns true if self.state evaluates correct for the entire truth table """
-        #log(self.is_goal)
         for _input, output in self.truth_table.items():
             if self.evaluate(_input, self.state) != output:
-                #log(self.is_goal, self.evaluate(_input, self.state), "<>", output)
                 return False
         return True
 
@@ -336,12 +338,10 @@ class Problem(Search.Problem):
         for action in actions:
             succ = state.get_successors(action)
             successors = successors.union(succ)
-        log(self.actions, state, successors)
         return successors
 
     def result(self, state: State, action: Gate) -> State:
         res = state.apply_action(action)
-        # log(self.result, state, action, res)
         return res
 
     def goal_test(self, state: State) -> bool:
@@ -350,18 +350,23 @@ class Problem(Search.Problem):
         return res
 
     def value(self, state: State) -> int:
-        # TODO: define a real state value
         # simulated annealing loo
         counter = 0
         for _input, output in state.truth_table.items():
-            if state.evaluate(_input, state.state) != output:
+            if state.evaluate(_input, state.state) == output:
                 counter += 1
 
-        correct_normalized = counter/len(state.truth_table) + state.state.num_of_gates()/len(state.truth_table)
-        val = correct_normalized
         log(self.value, state.state, "counter",  counter)
-        log(self.value, state.state, "value", val)
-        return -1*val
+        log(self.value, state.state, "num of gates", state.state.num_of_gates())
+        log(self.value, state.state, "height", state.state.height)
+
+        # used to get to the initial state where the defined limitations hold
+        if state.state.num_of_gates() < state.gate_l_limit or state.state.height > state.height_limit:
+            return -1000
+
+        score = math.exp(counter/len(state.truth_table)) - (state.state.num_of_gates()-state.gate_l_limit)/(state.gate_limit-state.gate_l_limit)
+        log(self.value, state.state, "score", score)
+        return score
 
 
 # ------------------- State get_successors helper functions ------------------------------

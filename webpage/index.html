@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta http-equiv="content-type" content="text/html; charset=iso-8859-1"/>
+
+    <!-- you may want to add your own keywords here, for search engine optimization -->
+    <meta name="Keywords" content="INTRODUCTION TO ARTIFICIAL INTELLIGENCE, computer science, the hebrew university of jerusalem, project"/ >
+    <link rel="stylesheet" type="text/css" href="http://www.cs.huji.ac.il/~ai/projects/2012/css/default.css" />      <!-- Don't change this line!-->
+    <title>CircuitMinimization</title>
+</head>
+
+<body>
+<div class="main">
+    <div class="gfx">
+        <a href="http://www.cs.huji.ac.il/~ai/projects/" alt="Introduction to Artificial Intelligence The Hebrew University of Jerusalem"></a>  <!-- Don't change this line!--> 
+    </div>
+    <div class="title">
+        <h1>Circuit Minimization in Boolean Algebra</h1>
+        <h4>Final project by </h4>
+        <h3>
+            <a> Ehud Klein </a> &nbsp &nbsp
+            <a> Tal Aviel </a> &nbsp &nbsp
+            <a> Alex Feldsher </a> &nbsp &nbsp
+            <a> Yigal Shenkman </a>
+        </h3>
+    </div>
+    <hr>
+
+    <div class="content">
+        <h2>Introduction</h2>
+        <p>
+            Circuit minimization techniques are widely used in the semiconductor industry for reducing the physical
+            size, latency and the heat emitted from circuits, and to reduce the total manufacturing cost of the circuit.
+        </p>
+        <p>
+            The problem of circuit minimization, or Boolean function minimization, deals with reducing the number of
+            elements (logic gates or logic operators) in a circuit, or in a Boolean function, while keeping the original
+            function. This problem is np-complete, and we have chosen to test the heuristic search approach - instead of
+            calculating an exact solution, try to search the solution space using appropriate methods from the course.
+
+        </p>
+
+        <h2> Approaches and Methods </h2>
+        <p>
+            We chose to test two probabilistic methods we have seen in the course that proved to be quite successful in
+            other fields. The first is Simulated Annealing, which were shown to be of great use by Kirkpatrick et al
+            (1983), including, interestingly, physical computer design.
+            The second is Genetic Programming, also at use in the field by Gruau (1992).
+        </p>
+        <h3>Simulated Annealing</h3>
+        <p>
+            Simulated annealing is a probabilistic algorithm for finding the global optimum of a function in a large
+            search space. In its implementation it is similar to hill-climbing, but instead of selecting the best move
+            it selects a random move. If the move improves the state, it is accepted. Otherwise, the move is accepted
+            with a some probability. The probability decreases exponentially with the "badness" of the move compared to
+            the current state. The probability also decreases with the number of iterations, T (temperature), "bad"
+            moves are more likely to be allowed at the beginning of the search. If the T is lowered slowly enough, the
+            algorithm will find a global optimum with probability approaching to 1.
+        </p>
+        <p>
+            In our implementation, the function recieves a truth table and returns a boolean expression that holds true
+            to the truth table.
+        </p>
+        <h4>Search space</h4>
+        <p> We used a graph representation of the circuit/boolean expression. The search space consists of all the
+            possible permutations and combinations of AND(x,y), OR(x,y), and NOT(x) logic gates. Additionally we added
+            limitations to the search space size by limiting the number of gates, and the circuit depth/height, since
+            the computation time of a state's neighbors is exponential with the number of gates and in order to prevent
+            a redundant search in places where we know for certainly the optimal solution doesn't reside.</p>
+        <h4>Ranking a state</h4>
+        <p>The most difficult part was to decide on a scoring function for each state that would correctly represent the
+            "goodness" of a state relative to the other states.</p>
+        <p>For the number of lines in the truth table solved correctly we "rewarded" exponentially and for the number of
+            gates we "punished" linearly.</p>
+
+        <h3>Genetic Programming</h3>
+        <p>
+            In Genetic Programming (GP) we have a population of genes. Each gene has a fitness value (real number) that
+            describes how close the gene is to the solution we're looking for. A gene can undergo a mutation, which
+            produces a new gene. A pair of genes can be recombined to produce two new genes.
+        </p>
+        <h2> Results </h2>
+        <h3>Simulated Annealing</h3>
+        <p>We ran our implementation on 2,3, and 4 variable truth tables. And compared the Simulated Annealing solution
+            against the Quine-McCluskey algorithm solution using the SymPy logic library.</p>
+        <p>3 variable truth tables results:
+        <p>We limited the search space to 2 times the number of gates in the naive POS and SOP solutions.</p>
+        <p>In the graph below we can see that a solution was found only for 30% of the the truth tables.</p>
+        <img width="542" alt="histogram" src="img/3_var_pos_2_limit_histogram.png">
+        <p>In the graph below we can see the distribution of the difference in the number of gates between the
+            Quine-McCluskey solution and the solution found using Simulated Annealing.</p>
+        <p>Out of those 30%, almost 40% are better than the solution found by the Quine-McCluskey algorithm, more than
+            50% are comparable to Quine-McCluskey's solution, and less than 10% are worse.</p>
+        <img width="542" alt="diff" src="img/3_var_pos_2_solution_gate_diff.png">
+
+
+        <p>The following circuits are an example for a 4 gate improvement over the Quine-McCluskey solution:</p>
+        <img width="542" alt="quine" src="img/Quine_solition.png">
+        <p>The circuit above represents</p>
+        <p>
+            Or(And(x, y, ~z), And(x, ~y, z), And(~x, y, z), And(~x, ~y, ~z))
+        </p>
+        <p>
+            which is the Quine-McCluskey algorithm solution that uses 14 gates.</p>
+        <p>
+            The solution contains gates with 3 inputs and 4 inputs and they each gate was counted as 2 and 3 gates
+            respectively.</p>
+        <p>The next circuit represents </p>
+        <p>
+            AND(NOT(AND(x,AND(OR(y,NOT(OR(y,z))),OR(z,NOT(y))))),
+            OR(x,AND(OR(y,NOT(OR(y,z))),OR(z,NOT(y)))))
+        </p>
+        <p>
+            which is the solution found with Simulated Annealing that uses 10 gates.
+        </p>
+        <p>
+            <img width="542" alt="quine" src="img/SimulatedAnnealing_Solution.png">
+        </p>
+        <h3>Genetic Programming</h3>
+        <p>
+            We've ran our implementation on many random problems of various sizes. For parameter tuning, we were using an automated process leveraging Jenkins as our automation tool. The process was as follow -
+        </p>
+        <p>
+            <img width="542" alt="quine" src="img/parameter_tuning.jpg">
+        </p>
+        <p>
+            Generally speaking, small problems (<=3 variables) were converged quickly to a solution similar to Quine-McCluskey.<br />
+            For large scale problems (8 variables,) our implementation didn't converge after running for 20K generations.<br />
+            See details results in the report.
+        </p>
+
+
+        <h2>Conclusions</h2>
+        <p>
+            Discuss the results vis-a-vis your goals and make conclusions.
+        </p>
+
+        <h2>Additional Information</h2>
+        <p>
+        <ul>
+            <li><a href="files/report.pdf"> Link to the report (English)</a></li>
+        </ul>
+        </p>
+
+        <h2>References</h2>
+        <p>
+            "Optimization by Simulated Annealing | Science." Accessed August 19, 2018.
+            http://science.sciencemag.org/content/220/4598/671/tab-article-info
+        </p>
+        <p>
+            "Genetic synthesis of Boolean neural networks with a cell ... - IEEE Xplore." Accessed August 19, 2018.
+            https://ieeexplore.ieee.org/iel2/893/6782/00273948.pdf.
+        </p>
+    </div>
+
+    <!-- *Don't* delete the below code, copyright issues...  -->
+    <div class="footer">
+        <span class="right"><a href="http://templates.arcsin.se/">Website template</a> by <a href="http://arcsin.se/">Arcsin</a>   </span>
+    </div>
+</div>
+</body>
+</html>
+
