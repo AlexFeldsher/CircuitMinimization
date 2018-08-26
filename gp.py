@@ -149,7 +149,7 @@ class Util:
                 another = random.choice(tuple(self.str_syms-{symbol}))
                 ret = srepr[:ropi+1] + "'" + another + "'" + srepr[cpi:]
             else:
-                ret = srepr[:bni+1] + self.simple_random_srepr() + srepr[cpi+1:]
+                ret = srepr[:bni+1] + self.simple_random_srepr(3) + srepr[cpi+1:]
         elif 'Not' in node:  # remove Not
             cpi = self.find_cpi(srepr, ropi)
             ret = srepr[:bni+1] + srepr[ropi+1:cpi] + srepr[cpi+1:]
@@ -256,11 +256,31 @@ class Util:
         tt_f = f(*self.tt_vars_lists)
         return np.count_nonzero(tt_f == self.target_tt) / len(tt_f)
 
+    def naive_srepr(self):
+        mt = tt_to_sympy_minterms(self.target_tt)
+        naive_srepr = 'Or('
+        for term in mt:
+            conj = 'And('
+            for i, t in enumerate(term):
+                if not t:
+                    conj += 'Not('
+                conj += sympy.srepr(self.syms[i])
+                if not t:
+                    conj += ')'
+                conj += ','
+            conj += ')'
+            naive_srepr += conj + ','
+        naive_srepr += ')'
+        naive_srepr = sympy.srepr(sympy_parser.parse_expr(naive_srepr))  # get rid of commas
+        score, per, nb_gates = self.fitness(naive_srepr)
+
+        return score, per, nb_gates, naive_srepr
+
 
 class GP:
     LOW_FITNESS = -2**31
 
-    def __init__(self, pop_size=5000, size_next_gen=300, lucky_per=0.10, unique_pop=False, **kwargs):
+    def __init__(self, pop_size=5000, size_next_gen=300, lucky_per=0.10, unique_pop=False, add_naive=False, **kwargs):
         """
         Create a genetic programming class that will help solve the circuit minimization problem
 
@@ -276,6 +296,7 @@ class GP:
         self.size_lucky_parents = self.size_next_gen - self.size_best_parents
 
         self.unique_pop = unique_pop
+        self.add_naive = add_naive
         self.util = Util(**kwargs)
         self.cache = LRU(10000)
 
@@ -287,12 +308,22 @@ class GP:
         self.population = np.array([self.LOW_FITNESS]*self.pop_size, dtype=pop_dtype).view(np.recarray)
         self.sreprs = [None] * self.pop_size
 
+        if self.add_naive:
+            init_pop_size -= 1
         ret = g.util.pool.map(g.util.init_one, range(init_pop_size))
+
         for i, r in enumerate(ret):
             r_fitness, r_accuracy, r_numgates, r_srepr = r
             self.population[i] = r_fitness, r_accuracy, r_numgates
             self.cache[r_srepr] = r_fitness, r_accuracy, r_numgates
             self.sreprs[i] = r_srepr
+
+        if self.add_naive:
+            r_fitness, r_accuracy, r_numgates, r_srepr = self.util.naive_srepr()
+            self.population[i+1] = r_fitness, r_accuracy, r_numgates
+            self.cache[r_srepr] = r_fitness, r_accuracy, r_numgates
+            self.sreprs[i+1] = r_srepr
+
 
     def run(self, num_generations=10, init_pop_size=1000):
         global logfile
@@ -386,6 +417,7 @@ def tt_to_sympy_minterms(tt):
 
 parser = argparse.ArgumentParser()
 
+parser.add_argument('--add_naive', type=bool, default=False, help='start with naive solution in population')
 parser.add_argument('--pop_size', type=int, default=20000, help='total population size - worst are removed if too many')
 parser.add_argument('--init_pop_size', type=int, default=2000, help='initial population size')
 parser.add_argument('--size_next_gen', type=int, default=300, help='how many offspring in each generation. MUST BE EVEN')
@@ -429,7 +461,9 @@ if __name__ == '__main__':
     print_args(args, logfile)
     
     # tt = np.array([0, 1, 1, 0, 0, 0, 1, 1] * 128, dtype=np.bool)
-    tt = np.random.randint(2, size=128, dtype=bool)
+#    tt = np.random.randint(2, size=128, dtype=bool)
+#    tt = np.random.randint(2, size=8, dtype=bool)
+    tt = np.array([False, True, True, True, False, False, True, True])
     print(tt.tolist())
     print(tt.tolist(), file=logfile)
     g = GP(num_vars=int(np.log2(tt.shape[0])),
@@ -441,6 +475,7 @@ if __name__ == '__main__':
            lucky_per=opt.lucky_per,
            weight_num_gates=opt.weight_num_gates,
            weight_num_agree=opt.weight_num_agree,
+           add_naive=opt.add_naive,
     )
     fn = g.util.syms[0] | (g.util.syms[1] & (~g.util.syms[2] | g.util.syms[0]))
     srepr = sympy.srepr(fn)
